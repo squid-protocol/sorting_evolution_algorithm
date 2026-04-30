@@ -1,0 +1,41 @@
+{
+  "channelWidth": 1000,
+  "detectorOffset": -350,
+  "boardAngle": 0.3101286806229009,
+  "shakeAmplitude": 0.627112260908256,
+  "cascadingRamps": [
+    {
+      "side": "right",
+      "y_position": 250,
+      "angle": 0.102
+    },
+    {
+      "side": "left",
+      "y_position": 650,
+      "angle": 0.10222554223131992
+    },
+    {
+      "side": "right",
+      "y_position": 800,
+      "angle": 0.44185870264492827
+    },
+    {
+      "side": "left",
+      "y_position": 1300,
+      "angle": 0.6
+    },
+    {
+      "side": "right",
+      "y_position": 1884.292691697631
+    }
+  ],
+  "batchSize": 50,
+  "numBatches": 1,
+  "dropDelayTime": 6574,
+  "batchDropDuration": 2987,
+  "conveyorDropX": 1537,
+  "conveyorDropWidth": 81,
+  "detectorHeight": 147,
+  "finalRampKneeX_factor": 0.9,
+  "finalRampKneeY_factor": 0.45854095283704843
+}

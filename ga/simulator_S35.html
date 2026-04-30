@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>S35 Standalone Simulator (Full Fitness Update)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #2c3e50; color: #ecf0f1; margin: 0; padding: 20px; display: flex; gap: 20px; height: calc(100vh - 40px); }
+        .main-container { display: flex; flex-direction: column; gap: 20px; flex-grow: 1; min-width: 550px; max-width: 600px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #3498db #2c3e50; }
+        .controls, .results, .settings, .info-box { background: #34495e; padding: 20px; border-radius: 8px; }
+        h2, h3, h4 { margin-top: 0; border-bottom: 1px solid #7f8c8d; padding-bottom: 10px; }
+        h4 { border-bottom: none; padding-bottom: 4px; margin-bottom: 4px; color: #bdc3c7; }
+        textarea { width: 100%; height: 150px; background: #2c3e50; color: white; border: 1px solid #7f8c8d; border-radius: 4px; padding: 10px; box-sizing: border-box; font-family: monospace; }
+        button { padding: 12px 20px; font-size: 16px; cursor: pointer; background-color: #3498db; color: white; border: none; border-radius: 5px; transition: background-color 0.2s; margin-top: 10px; }
+        button:hover { background-color: #2980b9; }
+        button:disabled { background-color: #555; cursor: not-allowed; }
+        select { width: 100%; padding: 10px; background: #2c3e50; color: white; border: 1px solid #7f8c8d; border-radius: 4px; margin-top: 10px; }
+        .button-group { display: flex; gap: 10px; }
+        #simulation-container { min-width: 1000px; height: 100%; background-color: #1d2834; border-radius: 8px; overflow: hidden; }
+        #results-display { white-space: pre-wrap; font-family: monospace; background: #2c3e50; padding: 15px; border-radius: 4px; border: 1px solid #7f8c8d; max-height: 200px; overflow-y: auto; }
+        .setting-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .setting-item label { flex-basis: 60%; font-size: 14px; }
+        .setting-item input { flex-basis: 40%; background: #2c3e50; border: 1px solid #7f8c8d; color: white; padding: 5px; border-radius: 4px; }
+        .charts-wrapper { display: flex; flex-direction: column; gap: 10px; }
+        .chart-container { position: relative; height: 250px; padding: 15px; }
+        .fitness-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .fitness-table th, .fitness-table td { padding: 6px; text-align: left; border-bottom: 1px solid #444; }
+        .fitness-table th { color: #bdc3c7; }
+        .fitness-table td:nth-child(2), .fitness-table td:nth-child(3), .fitness-table td:nth-child(4) { text-align: right; font-family: monospace; }
+        .impact-positive { color: #2ecc71 !important; }
+        .impact-negative { color: #e74c3c !important; }
+        .selected-design { background-color: #3498db; color: white; }
+        #early-exit-status { font-weight: bold; color: #f39c12; text-align: center; margin-top: 10px; min-height: 20px; }
+        .warning-note { font-size: 12px; color: #bdc3c7; text-align: center; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 4px; margin-top: 15px; }
+        .weight-section { margin-bottom: 10px; }
+        .weight-grid-three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .weight-grid-four { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+        .weight-input { display: flex; flex-direction: column; gap: 4px; }
+        .weight-input label { font-size: 12px; color: #bdc3c7; }
+        .weight-input input { width: 100%; background-color: #2c3e50; color: #ecf0f1; border: 1px solid #34495e; border-radius: 4px; padding: 5px; font-size: 14px; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+    <div id="simulation-container"></div>
+    <div class="main-container">
+        <div class="controls">
+            <h2>S35 Chromosome Loader</h2>
+            <p>Load a chromosome by pasting JSON below, or load a history file to browse designs.</p>
+            <textarea id="chromosome-input" placeholder="Paste S35 chromosome JSON here..."></textarea>
+            <div id="history-controls" style="display: none;">
+                <label for="design-selector">Select Design:</label>
+                <select id="design-selector"></select>
+            </div>
+            <div class="button-group">
+                <button id="load-paste-button">Load from Paste</button>
+                <button id="load-file-button">Load History File</button>
+                <input type="file" id="file-input" accept=".json" style="display: none;" />
+            </div>
+        </div>
+         <div class="info-box" id="fitness-weights-controls">
+            <h3>Fitness Weights (Hyperparameters)</h3>
+            <div class="weight-section">
+                <h4>Core Rewards</h4>
+                <div class="weight-grid-three">
+                    <div class="weight-input"><label for="w_tp_exp">W_TP (Exp)</label><input type="number" id="w_tp_exp" value="900000" step="10000"></div>
+                    <div class="weight-input"><label for="w_tp_lin">W_TP (Lin)</label><input type="number" id="w_tp_lin" value="10000" step="500"></div>
+                    <div class="weight-input"><label for="w_tc">W_TP (Count)</label><input type="number" id="w_tc" value="50" step="10"></div>
+                    <div class="weight-input"><label for="w_con_exp">W_Consistency (Exp)</label><input type="number" id="w_con_exp" value="3000" step="10000"></div>
+                    <div class="weight-input"><label for="w_con_lin">W_Consistency (Lin)</label><input type="number" id="w_con_lin" value="200" step="200"></div>
+                    <div class="weight-input"><label for="w_sym_exp">W_Symmetry (Exp)</label><input type="number" id="w_sym_exp" value="2000" step="200"></div>
+                    <div class="weight-input"><label for="w_sym_lin">W_Symmetry (Lin)</label><input type="number" id="w_sym_lin" value="500" step="50"></div>
+                </div>
+            </div>
+             <div class="weight-section">
+                <h4>Preferred Interval Rewards</h4>
+                <div class="weight-grid-three">
+                    <div class="weight-input"><label for="w_pref_ratio_exp">W_Pref_Ratio (Exp)</label><input type="number" id="w_pref_ratio_exp" value="300000" step="10000"></div>
+                    <div class="weight-input"><label for="w_pref_ratio_lin">W_Pref_Ratio (Lin)</label><input type="number" id="w_pref_ratio_lin" value="5000" step="100"></div>
+                    <div class="weight-input"><label for="w_pref_count">W_Pref_Count</label><input type="number" id="w_pref_count" value="50" step="50"></div>
+                </div>
+            </div>
+            <div class="weight-section">
+                <h4>Core Penalties</h4>
+                <div class="weight-grid-three">
+                    <div class="weight-input"><label for="w_j">W_Jam</label><input type="number" id="w_j" value="5" step="1"></div>
+                    <div class="weight-input"><label for="w_s">W_Simultaneous</label><input type="number" id="w_s" value="500" step="50"></div>
+                    <div class="weight-input"><label for="w_iqr">W_IQR</label><input type="number" id="w_iqr" value="10" step="1"></div>
+                    <div class="weight-input"><label for="w_pv">W_Physics_Violation</label><input type="number" id="w_pv" value="10000" step="1000"></div>
+                </div>
+            </div>
+            <div class="weight-section">
+                <h4>Timing Zone Penalties</h4>
+                <div class="weight-grid-four">
+                    <div class="weight-input"><label for="w_zone_reject">W_Reject (0-200ms)</label><input type="number" id="w_zone_reject" value="2000" step="100"></div>
+                    <div class="weight-input"><label for="w_zone_low">W_Low (200-250ms)</label><input type="number" id="w_zone_low" value="1000" step="100"></div>
+                    <div class="weight-input"><label for="w_zone_high">W_High (750-1500ms)</label><input type="number" id="w_zone_high" value="500" step="50"></div>
+                    <div class="weight-input"><label for="w_zone_jam">W_Jam (>1500ms)</label><input type="number" id="w_zone_jam" value="1000" step="100"></div>
+                </div>
+            </div>
+        </div>
+        <div class="settings">
+            <h3>Simulation Settings</h3>
+            <div id="settings-dashboard">
+                <p>Load a chromosome to see its settings.</p>
+            </div>
+            <p class="warning-note">⚠️ <strong>Note:</strong> This visualizer is for real-time inspection. Final fitness scores are determined by the high-speed, headless sub-workers.</p>
+        </div>
+        <div class="results">
+            <h3>Simulation Controls & Results</h3>
+             <div class="button-group">
+                <button id="run-button" disabled>Run Full Simulation</button>
+                <button id="stop-button" disabled>End Simulation</button>
+            </div>
+            <div id="early-exit-status"></div>
+            <pre id="results-display">Load a chromosome to begin.</pre>
+        </div>
+        <div class="info-box">
+            <h3>Fitness Breakdown</h3>
+            <table class="fitness-table">
+                 <thead> <tr> <th>Term</th> <th>Weight</th> <th>Measure</th> <th>Impact</th> </tr> </thead>
+                <tbody id="fitness-breakdown-body"></tbody>
+            </table>
+        </div>
+        <div class="charts-wrapper">
+            <div class="info-box chart-container">
+                <h3>Exit Clump Histogram</h3>
+                <canvas id="clumpHistogram"></canvas>
+            </div>
+            <div class="info-box chart-container">
+                <h3>Timing Interval Histogram</h3>
+                <canvas id="timingHistogram"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as configModule from '../simulation_config.js?run=${new Date().getTime()}';
+
+        let visualizer = null;
+        let currentChromosome = null;
+        let liveSim = null;
+        let loadedHistory = [];
+        let clumpChart = null;
+        let timingChart = null;
+
+        const BOARD_ANGLE_CALC_FN = (gravity, boardAngleRad) => {
+            const baselineGravity = configModule.ENGINE_CONFIG.gravity.y;
+            gravity.x = 0;
+            gravity.y = Math.cos(boardAngleRad) * baselineGravity;
+        };
+
+        class Visualizer {
+            constructor(containerElement, config) {
+                this.config = config;
+                this.Matter = Matter;
+                const { Engine, Render, Runner, World, Events } = this.Matter;
+
+                this.engine = Engine.create({ 
+                    gravity: { y: 0 },
+                    positionIterations: this.config.ENGINE_CONFIG.positionIterations,
+                    velocityIterations: this.config.ENGINE_CONFIG.velocityIterations
+                });
+
+                this.world = this.engine.world;
+                this.render = Render.create({
+                    element: containerElement,
+                    engine: this.engine,
+                    options: {
+                        width: containerElement.clientWidth,
+                        height: containerElement.clientHeight,
+                        wireframes: false,
+                        background: '#1d2834'
+                    }
+                });
+                this.runner = Runner.create();
+                Render.run(this.render);
+                Runner.run(this.runner, this.engine);
+                
+                Render.lookAt(this.render, {
+                    min: { x: 0, y: 0 },
+                    max: { x: this.config.SIM_CONFIG.MACHINE_WIDTH, y: this.config.SIM_CONFIG.MACHINE_HEIGHT }
+                });
+
+                window.addEventListener('resize', () => {
+                    this.render.bounds.max.x = containerElement.clientWidth;
+                    this.render.bounds.max.y = containerElement.clientHeight;
+                    this.render.options.width = containerElement.clientWidth;
+                    this.render.options.height = containerElement.clientHeight;
+                    Render.setPixelRatio(this.render, window.devicePixelRatio);
+                     Render.lookAt(this.render, {
+                        min: { x: 0, y: 0 },
+                        max: { x: this.config.SIM_CONFIG.MACHINE_WIDTH, y: this.config.SIM_CONFIG.MACHINE_HEIGHT }
+                    });
+                });
+
+                Events.on(this.render, 'afterRender', () => {
+                    this.drawGrid();
+                });
+            }
+
+            drawGrid() {
+                const ctx = this.render.context;
+                const bounds = this.render.bounds;
+                const gridSpacing = 200;
+
+                ctx.save();
+                ctx.strokeStyle = 'rgba(149, 165, 166, 0.2)';
+                ctx.fillStyle = 'rgba(189, 195, 199, 0.7)';
+                ctx.font = '12px Arial';
+                ctx.lineWidth = 1;
+
+                for (let x = bounds.min.x; x < bounds.max.x; x += gridSpacing) {
+                    const canvasX = (x - bounds.min.x) * (this.render.options.width / (bounds.max.x - bounds.min.x));
+                    if (canvasX < 0 || canvasX > this.render.options.width) continue;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(canvasX, 0);
+                    ctx.lineTo(canvasX, this.render.options.height);
+                    ctx.stroke();
+
+                    ctx.fillText(`${Math.round(x)}px`, canvasX + 5, 15);
+                }
+
+                for (let y = bounds.min.y; y < bounds.max.y; y += gridSpacing) {
+                    const canvasY = (y - bounds.min.y) * (this.render.options.height / (bounds.max.y - bounds.min.y));
+                    if (canvasY < 0 || canvasY > this.render.options.height) continue;
+
+                    ctx.beginPath();
+                    ctx.moveTo(0, canvasY);
+                    ctx.lineTo(this.render.options.width, canvasY);
+                    ctx.stroke();
+                    
+                    if(y > 0) ctx.fillText(`${Math.round(y)}px`, 5, canvasY - 5);
+                }
+
+                ctx.restore();
+            }
+
+            drawStaticBoard(chromosome) {
+                if (!chromosome) return;
+                const { World, Composite } = this.Matter;
+                Composite.clear(this.world, true);
+                const boardBodies = this.createBoardFromS35Chromosome(chromosome);
+                World.add(this.world, boardBodies);
+                this.drawSensors(chromosome);
+            }
+
+            drawSensors(chromosome) {
+                const { World, Bodies } = this.Matter;
+                const channelCenterX = this.config.SIM_CONFIG.MACHINE_WIDTH / 2;
+                const detectorX = channelCenterX + chromosome.detectorOffset;
+                const detectorY = this.config.SIM_CONFIG.MACHINE_HEIGHT - chromosome.detectorHeight;
+                const mainSensor = Bodies.rectangle(detectorX, detectorY, this.config.SENSOR_CONFIG.DETECTOR_WIDTH, 10, { isStatic: true, isSensor: true, render: { fillStyle: 'rgba(46, 204, 113, 0.7)' } });
+                World.add(this.world, mainSensor);
+            }
+
+            createBoardFromS35Chromosome(chromosome) {
+                const { Bodies, Vector } = this.Matter;
+                const allBodies = [];
+                const staticBodyProps = configModule.STATIC_BODY_PHYSICS_PROPERTIES || {};
+                const wallOptions = { 
+                    isStatic: true, 
+                    render: { fillStyle: '#95a5a6' },
+                    ...staticBodyProps
+                };
+                const rampOptions = {
+                    isStatic: true,
+                    render: { fillStyle: '#bdc3c7' },
+                    ...staticBodyProps
+                };
+
+                const { channelWidth, cascadingRamps, detectorOffset, detectorHeight, finalRampKneeX_factor, finalRampKneeY_factor } = chromosome;
+
+                const channelCenterX = this.config.SIM_CONFIG.MACHINE_WIDTH / 2;
+                const leftWallX = channelCenterX - (channelWidth / 2);
+                const rightWallX = channelCenterX + (channelWidth / 2);
+
+                allBodies.push(Bodies.rectangle(leftWallX, this.config.SIM_CONFIG.MACHINE_HEIGHT / 2, this.config.SIM_CONFIG.WALL_THICKNESS, this.config.SIM_CONFIG.MACHINE_HEIGHT, wallOptions));
+                allBodies.push(Bodies.rectangle(rightWallX, this.config.SIM_CONFIG.MACHINE_HEIGHT / 2, this.config.SIM_CONFIG.WALL_THICKNESS, this.config.SIM_CONFIG.MACHINE_HEIGHT, wallOptions));
+                
+                const detectorX = channelCenterX + detectorOffset;
+
+                cascadingRamps.forEach((ramp, index) => {
+                    const isLastRamp = index === cascadingRamps.length - 1;
+                    const rampThickness = this.config.SIM_CONFIG.RAMP_THICKNESS;
+                    const attachX = ramp.side === 'left' ? leftWallX + (this.config.SIM_CONFIG.WALL_THICKNESS / 2) : rightWallX - (this.config.SIM_CONFIG.WALL_THICKNESS / 2);
+
+                    if (isLastRamp) {
+                        const p0 = Vector.create(attachX, ramp.y_position);
+                        const p2 = Vector.create(detectorX + (this.config.SENSOR_CONFIG.DETECTOR_WIDTH / 2), this.config.SIM_CONFIG.MACHINE_HEIGHT - detectorHeight);
+                        const totalVector = Vector.sub(p2, p0);
+                        const p1 = Vector.add(p0, { x: totalVector.x * finalRampKneeX_factor, y: totalVector.y * finalRampKneeY_factor });
+                        const points = [p0, p1, p2];
+                        for (let i = 0; i < points.length - 1; i++) {
+                            const start = points[i];
+                            const end = points[i+1];
+                            const segmentVector = Vector.sub(end, start);
+                            const length = Vector.magnitude(segmentVector);
+                            const angle = Vector.angle(segmentVector, {x: 1, y: 0});
+                            const center = Vector.add(start, Vector.mult(Vector.normalise(segmentVector), length / 2));
+                            if (length > 1) {
+                                 allBodies.push(Bodies.rectangle(center.x, center.y, length, rampThickness, { ...rampOptions, angle: angle }));
+                            }
+                        }
+                    } else {
+                        const rampLength = channelWidth * 0.85;
+                        const effectiveAngle = (ramp.side === 'left') ? ramp.angle : -ramp.angle;
+                        
+                        const centerOffsetX = (rampLength / 2) * Math.cos(ramp.angle);
+                        const centerOffsetY = (rampLength / 2) * Math.sin(ramp.angle);
+                        
+                        const rampCenterX = attachX + (ramp.side === 'left' ? centerOffsetX : -centerOffsetX);
+                        const rampCenterY = ramp.y_position + centerOffsetY;
+
+                        if (rampLength > 1) {
+                            allBodies.push(Bodies.rectangle(rampCenterX, rampCenterY, rampLength, rampThickness, {
+                                ...rampOptions,
+                                angle: effectiveAngle,
+                            }));
+                        }
+                    }
+                });
+                return allBodies;
+            }
+        }
+        
+        class LiveSimulation {
+            constructor(chromosome, visualizer, onComplete) {
+                this.chromosome = chromosome;
+                this.visualizer = visualizer;
+                this.onComplete = onComplete;
+                this.engine = visualizer.engine;
+                this.Matter = visualizer.Matter;
+                this.isRunning = false;
+                this.animationFrameId = null;
+                this.timeStep = configModule.TIME_STEP;
+                this.pieceLibrary = configModule.PIECE_LIBRARY.map(p => ({
+                    ...p,
+                    vertices: this.Matter.Vertices.fromPath(p.vertices)
+                }));
+            }
+
+            start() {
+                this.isRunning = true;
+                this.visualizer.drawStaticBoard(this.chromosome);
+                
+                const { Bodies, Composite, Engine } = this.Matter;
+
+                this.exitedPieceIDs = new Set();
+                this.exitTimes = [];
+                this.exitClumps = [];
+                this.simulationTime = 0;
+                this.timeOfLastExit = 0;
+                this.earlyExitReason = null;
+                this.physicsViolationCount = 0;
+
+                const { numBatches, batchSize, dropDelayTime, batchDropDuration } = this.chromosome;
+                this.batches = Array.from({ length: numBatches }, (_, i) => ({
+                    startTime: i * dropDelayTime,
+                    hasStarted: false,
+                    piecesSpawned: 0,
+                    dropStartTime: 0
+                }));
+                this.totalPieces = numBatches * batchSize;
+
+                let lastTime = performance.now();
+                let accumulator = 0;
+
+                const gameLoop = (currentTime) => {
+                    if (!this.isRunning) return;
+                    
+                    const deltaTime = currentTime - lastTime;
+                    lastTime = currentTime;
+                    accumulator += deltaTime;
+
+                    while (accumulator >= this.timeStep) {
+                        this.simulationTime += this.timeStep;
+
+                        this.batches.forEach((batch) => {
+                            if (!batch.hasStarted && this.simulationTime >= batch.startTime) {
+                                batch.hasStarted = true; batch.dropStartTime = this.simulationTime;
+                            }
+                            if (batch.hasStarted && batch.piecesSpawned < batchSize) {
+                                const elapsedDropTime = this.simulationTime - batch.dropStartTime;
+                                const dropProgress = Math.min(1, elapsedDropTime / batchDropDuration);
+                                const easedProgress = 0.5 * (1 - Math.cos(dropProgress * Math.PI));
+                                const expectedSpawns = Math.floor(easedProgress * batchSize);
+                                const newSpawns = Math.min(batchSize, expectedSpawns) - batch.piecesSpawned;
+                                if (newSpawns > 0) {
+                                    for (let i = 0; i < newSpawns; i++) {
+                                        const shapeDef = this.pieceLibrary[Math.floor(Math.random() * this.pieceLibrary.length)];
+                                        const spawnX = this.chromosome.conveyorDropX + (Math.random() - 0.5) * this.chromosome.conveyorDropWidth;
+                                        const piece = Bodies.fromVertices(spawnX, 10, [shapeDef.vertices], { ...configModule.PIECE_PHYSICS_PROPERTIES, label: 'lego', render: { fillStyle: '#f1c40f' } });
+                                        Composite.add(this.engine.world, piece);
+                                    }
+                                    batch.piecesSpawned += newSpawns;
+                                }
+                            }
+                        });
+
+                        BOARD_ANGLE_CALC_FN(this.engine.world.gravity, this.chromosome.boardAngle);
+                        this.engine.world.gravity.x = (Math.random() - 0.5) * (this.chromosome.shakeAmplitude || 0);
+                        
+                        Engine.update(this.engine, this.timeStep);
+
+                        const piecesInWorld = Composite.allBodies(this.engine.world).filter(b => b.label === 'lego');
+                        const detectorY = this.visualizer.config.SIM_CONFIG.MACHINE_HEIGHT - this.chromosome.detectorHeight;
+                        let currentFrameExits = 0;
+
+                        for (const body of piecesInWorld) {
+                            if (body.position.y > detectorY) {
+                                if (!this.exitedPieceIDs.has(body.id)) {
+                                    this.exitedPieceIDs.add(body.id);
+                                    this.exitTimes.push(this.simulationTime);
+                                    this.timeOfLastExit = this.simulationTime;
+                                    currentFrameExits++;
+                                }
+                                Composite.remove(this.engine.world, body);
+                            }
+                        }
+                        if (currentFrameExits > 0) this.exitClumps.push(currentFrameExits);
+                        
+                        if (!this.earlyExitReason) {
+                            const reason = this.checkEarlyExitConditions(piecesInWorld);
+                            if (reason) {
+                                this.earlyExitReason = reason;
+                                document.getElementById('early-exit-status').textContent = `🚩 Early Exit Condition Met: ${reason}`;
+                            }
+                        }
+                        
+                        const totalSpawned = this.batches.reduce((sum, b) => sum + b.piecesSpawned, 0);
+                        document.getElementById('results-display').textContent = `Running...\nTime: ${(this.simulationTime / 1000).toFixed(1)}s\nPieces Spawned: ${totalSpawned} / ${this.totalPieces}\nPieces Exited: ${this.exitedPieceIDs.size}`;
+
+                        if (this.simulationTime > configModule.MAX_SIM_TIME) {
+                            this.stop("Timeout");
+                            return;
+                        }
+                        
+                        if (totalSpawned >= this.totalPieces && piecesInWorld.length === 0) {
+                            this.stop("Completed");
+                            return;
+                        }
+
+                        accumulator -= this.timeStep;
+                    }
+                    
+                    this.animationFrameId = requestAnimationFrame(gameLoop);
+                };
+                this.animationFrameId = requestAnimationFrame(gameLoop);
+            }
+
+            checkEarlyExitConditions(piecesInWorld) {
+                const STAGNATION_DURATION = 45000;
+                const STUCK_PIECE_DURATION_MS = 20000;
+                const MOVEMENT_THRESHOLD = 0.5;
+
+                if (this.exitedPieceIDs.size > 0 && this.simulationTime - this.timeOfLastExit > STAGNATION_DURATION) {
+                    return "Stagnation";
+                }
+
+                let currentStuckCount = 0;
+                const stuckPieceCountThreshold = Math.max(1, Math.ceil(this.totalPieces * 0.25));
+
+                piecesInWorld.forEach(body => {
+                    if (!body.lastMobilePosition) {
+                        body.lastMobilePosition = { x: body.position.x, y: body.position.y };
+                        body.stuckTimer = 0;
+                    }
+                    const displacement = this.Matter.Vector.magnitude(this.Matter.Vector.sub(body.position, body.lastMobilePosition));
+                    if (displacement < MOVEMENT_THRESHOLD) {
+                        body.stuckTimer += this.timeStep;
+                    } else {
+                        body.stuckTimer = 0;
+                        body.lastMobilePosition = { x: body.position.x, y: body.position.y };
+                    }
+                    if (body.stuckTimer > STUCK_PIECE_DURATION_MS) currentStuckCount++;
+                });
+
+                if (currentStuckCount >= stuckPieceCountThreshold) return "StuckPiece";
+                return null;
+            }
+
+            stop(reason) {
+                this.isRunning = false;
+                if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+                
+                // ========================================================================
+                // == UPGRADE: Full metrics calculation mirroring sub_worker            ==
+                // ========================================================================
+                const report = this.calculateFinalMetrics(reason);
+                // ========================================================================
+                
+                this.onComplete(report);
+            }
+
+            calculateFinalMetrics(reason) {
+                const throughputScore = this.exitedPieceIDs.size;
+                const totalPieces = this.totalPieces;
+                const jamPenalty = totalPieces - throughputScore;
+                
+                const clumpHistogram = {};
+                this.exitClumps.forEach(c => { clumpHistogram[c] = (clumpHistogram[c] || 0) + 1; });
+                const simultaneousPenalty = this.exitClumps.reduce((acc, c) => acc + (c > 1 ? (c*c) : 0), 0);
+
+                let consistencyRewardRatio = 0, symmetryRewardRatio = 0, normalizedIQR = 0;
+                let rejectCount = 0, lowCount = 0, highCount = 0, jamCount = 0, preferredIntervalCount = 0;
+                const intervals = [];
+                if (this.exitTimes.length > 1) {
+                    this.exitTimes.sort((a,b) => a - b);
+                    for (let i = 1; i < this.exitTimes.length; i++) intervals.push(this.exitTimes[i] - this.exitTimes[i-1]);
+                }
+
+                if (intervals.length > 5) {
+                    const sortedIntervals = [...intervals].sort((a, b) => a - b);
+                    const meanInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+                    const stdDev = Math.sqrt(intervals.map(x => Math.pow(x - meanInterval, 2)).reduce((a, b) => a + b) / intervals.length);
+                    consistencyRewardRatio = Math.max(0, 1 - (meanInterval > 0 ? stdDev / meanInterval : 10));
+                    normalizedIQR = meanInterval > 0 ? (sortedIntervals[Math.floor(sortedIntervals.length*3/4)] - sortedIntervals[Math.floor(sortedIntervals.length/4)]) / meanInterval : 10;
+                    symmetryRewardRatio = 1 - Math.abs(1 - ((intervals.filter(v => v > meanInterval).length / intervals.length) / 0.5));
+                    intervals.forEach(i => {
+                        if (i < 200) rejectCount++;
+                        else if (i < 250) lowCount++;
+                        else if (i >= 250 && i <= 750) preferredIntervalCount++;
+                        else if (i > 1500) jamCount++;
+                        else if (i > 750) highCount++;
+                    });
+                } else {
+                    normalizedIQR = 10;
+                }
+
+                const potentialIntervals = totalPieces > 1 ? totalPieces - 1 : 0;
+                const preferredIntervalRatio = potentialIntervals > 0 ? preferredIntervalCount / potentialIntervals : 0;
+
+                return {
+                    reason, throughputScore, totalPieces, jamPenalty, simultaneousPenalty,
+                    consistencyRewardRatio, symmetryRewardRatio, normalizedIQR, intervals, clumpHistogram,
+                    physicsViolationCount: this.physicsViolationCount, preferredIntervalCount, preferredIntervalRatio,
+                    rejectCount, lowCount, highCount, jamCount,
+                };
+            }
+        }
+
+        // --- UI Element References ---
+        const loadPasteButton = document.getElementById('load-paste-button');
+        const loadFileButton = document.getElementById('load-file-button');
+        const fileInput = document.getElementById('file-input');
+        const runButton = document.getElementById('run-button');
+        const stopButton = document.getElementById('stop-button');
+        const chromosomeInput = document.getElementById('chromosome-input');
+        const resultsDisplay = document.getElementById('results-display');
+        const settingsDashboard = document.getElementById('settings-dashboard');
+        const historyControls = document.getElementById('history-controls');
+        const designSelector = document.getElementById('design-selector');
+        const weightInputs = {
+            W_TP_EXP: document.getElementById('w_tp_exp'), W_TP_LIN: document.getElementById('w_tp_lin'), W_TC: document.getElementById('w_tc'),
+            W_CON_EXP: document.getElementById('w_con_exp'), W_CON_LIN: document.getElementById('w_con_lin'),
+            W_SYM_EXP: document.getElementById('w_sym_exp'), W_SYM_LIN: document.getElementById('w_sym_lin'),
+            W_PREF_COUNT: document.getElementById('w_pref_count'), W_PREF_RATIO_EXP: document.getElementById('w_pref_ratio_exp'), W_PREF_RATIO_LIN: document.getElementById('w_pref_ratio_lin'),
+            W_J: document.getElementById('w_j'), W_S: document.getElementById('w_s'), W_IQR: document.getElementById('w_iqr'),
+            W_PV: document.getElementById('w_pv'),
+            W_ZONE_REJECT: document.getElementById('w_zone_reject'), W_ZONE_LOW: document.getElementById('w_zone_low'),
+            W_ZONE_HIGH: document.getElementById('w_zone_high'), W_ZONE_JAM: document.getElementById('w_zone_jam'),
+        };
+
+        const processChromosome = (chromosome) => {
+            if (!chromosome || !chromosome.cascadingRamps) {
+                alert("Invalid S35 chromosome structure. Missing 'cascadingRamps'.");
+                return;
+            }
+            currentChromosome = chromosome;
+            chromosomeInput.value = JSON.stringify(currentChromosome, null, 2);
+            visualizer.drawStaticBoard(currentChromosome);
+            populateSettings(currentChromosome);
+            resultsDisplay.textContent = "Chromosome loaded. Ready to run simulation.";
+            runButton.disabled = false;
+        };
+
+        function populateSettings(chromosome) {
+            settingsDashboard.innerHTML = `
+                <div class="setting-item"><label>Channel Width</label><input type="number" id="setting-channelWidth" value="${chromosome.channelWidth}"></div>
+                <div class="setting-item"><label>Board Angle (rad)</label><input type="number" step="0.1" id="setting-boardAngle" value="${chromosome.boardAngle}"></div>
+                <div class="setting-item"><label>Shake Amplitude</label><input type="number" step="0.01" value="${chromosome.shakeAmplitude}"></div>
+                <div class="setting-item"><label>Detector Height</label><input type="number" value="${chromosome.detectorHeight}"></div>
+                <hr>
+                <h4>Batching</h4>
+                <div class="setting-item"><label>Batch Size</label><input type="number" value="${chromosome.batchSize}"></div>
+                <div class="setting-item"><label>Num Batches</label><input type="number" value="${chromosome.numBatches}"></div>
+                <div class="setting-item"><label>Drop Delay (ms)</label><input type="number" value="${chromosome.dropDelayTime}"></div>
+                <div class="setting-item"><label>Drop Duration (ms)</label><input type="number" value="${chromosome.batchDropDuration}"></div>
+                <hr>
+                <h4>Ramps</h4>
+            `;
+            chromosome.cascadingRamps.forEach((ramp, i) => {
+                const isLastRamp = i === chromosome.cascadingRamps.length - 1;
+                const angleValue = isLastRamp ? '' : ramp.angle;
+                const disabledAttr = isLastRamp ? 'disabled' : '';
+                const placeholder = isLastRamp ? 'placeholder="AUTO"' : '';
+
+                const rampHTML = `
+                    <div class="setting-item"><label>Ramp ${i+1} (${ramp.side}) Y</label><input type="number" value="${ramp.y_position}"></div>
+                    <div class="setting-item"><label>Ramp ${i+1} Angle</label><input type="number" step="0.1" value="${angleValue}" ${disabledAttr} ${placeholder}></div>
+                `;
+                settingsDashboard.innerHTML += rampHTML;
+            });
+        }
+        
+        function getSettingsFromUI() {
+            const modifiedChromosome = JSON.parse(JSON.stringify(currentChromosome));
+            modifiedChromosome.channelWidth = parseFloat(document.getElementById('setting-channelWidth').value);
+            modifiedChromosome.boardAngle = parseFloat(document.getElementById('setting-boardAngle').value);
+            return modifiedChromosome;
+        }
+
+        function getFitnessWeightsFromUI() {
+            const weights = {};
+            for (const key in weightInputs) {
+                if (weightInputs[key]) weights[key] = parseFloat(weightInputs[key].value);
+            }
+            return weights;
+        }
+
+        function updateClumpHistogram(histogramData) {
+            const canvas = document.getElementById('clumpHistogram');
+            if (!histogramData || !canvas) return;
+            const labels = Object.keys(histogramData).sort((a, b) => parseInt(a) - parseInt(b));
+            const data = labels.map(label => histogramData[label]);
+            if (clumpChart) {
+                clumpChart.data.labels = labels; clumpChart.data.datasets[0].data = data; clumpChart.update();
+            } else {
+                clumpChart = new Chart(canvas.getContext('2d'), { 
+                    type: 'bar', 
+                    data: { labels, datasets: [{ label: 'Clump Count', data, backgroundColor: 'rgba(52, 152, 219, 0.5)' }] }, 
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { title: { display: true, text: 'Clump Size' } }, y: { beginAtZero: true } } } 
+                });
+            }
+        }
+
+        function updateTimingHistogram(intervals) {
+            const canvas = document.getElementById('timingHistogram');
+            if (!intervals || !canvas) return;
+            const binSize = 50, maxTime = 2000, binCount = Math.ceil(maxTime / binSize);
+            const bins = new Array(binCount).fill(0);
+            const labels = Array.from({length: binCount}, (_, i) => `${i * binSize}`);
+            intervals.forEach(interval => { if (interval < maxTime) bins[Math.floor(interval / binSize)]++; });
+            if (timingChart) {
+                timingChart.data.labels = labels; timingChart.data.datasets[0].data = bins; timingChart.update();
+            } else {
+                timingChart = new Chart(canvas.getContext('2d'), { 
+                    type: 'bar', 
+                    data: { labels, datasets: [{ label: 'Interval Count', data: bins, backgroundColor: 'rgba(46, 204, 113, 0.5)' }] }, 
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { title: { display: true, text: 'Time (ms)' } }, y: { beginAtZero: true } } } 
+                });
+            }
+        }
+
+        // ========================================================================
+        // == UPGRADE: Full fitness breakdown function from main.js              ==
+        // ========================================================================
+        function updateFitnessBreakdown(result) {
+            const fitnessBreakdownBody = document.getElementById('fitness-breakdown-body');
+            if (!result || !fitnessBreakdownBody) return;
+            
+            const weights = getFitnessWeightsFromUI();
+            const throughputRatio = result.totalPieces > 0 ? result.throughputScore / result.totalPieces : 0;
+            
+            const breakdown = {
+                impact_tp_exp: (weights.W_TP_EXP || 0) * Math.pow(throughputRatio, 6),
+                impact_tp_lin: (weights.W_TP_LIN || 0) * throughputRatio,
+                impact_tc: (weights.W_TC || 0) * result.throughputScore,
+                impact_con_exp: (weights.W_CON_EXP || 0) * Math.pow(result.consistencyRewardRatio, 6),
+                impact_con_lin: (weights.W_CON_LIN || 0) * result.consistencyRewardRatio,
+                impact_sym_exp: (weights.W_SYM_EXP || 0) * Math.pow(result.symmetryRewardRatio, 6),
+                impact_sym_lin: (weights.W_SYM_LIN || 0) * result.symmetryRewardRatio,
+                impact_pref_count: (weights.W_PREF_COUNT || 0) * result.preferredIntervalCount,
+                impact_pref_ratio_exp: (weights.W_PREF_RATIO_EXP || 0) * Math.pow(result.preferredIntervalRatio, 3),
+                impact_pref_ratio_lin: (weights.W_PREF_RATIO_LIN || 0) * result.preferredIntervalRatio,
+                impact_j: -(weights.W_J || 0) * result.jamPenalty,
+                impact_s: -(weights.W_S || 0) * result.simultaneousPenalty,
+                impact_iqr: -(weights.W_IQR || 0) * result.normalizedIQR,
+                impact_pv: -(weights.W_PV || 0) * result.physicsViolationCount,
+                impact_zone_reject: -(weights.W_ZONE_REJECT || 0) * result.rejectCount,
+                impact_zone_low: -(weights.W_ZONE_LOW || 0) * result.lowCount,
+                impact_zone_high: -(weights.W_ZONE_HIGH || 0) * result.highCount,
+                impact_zone_jam: -(weights.W_ZONE_JAM || 0) * result.jamCount,
+            };
+
+            const rows = [
+                { label: 'TP Ratio (Exp)', w: weights.W_TP_EXP, m: `(${throughputRatio.toFixed(3)})^6`, i: breakdown.impact_tp_exp },
+                { label: 'TP Ratio (Lin)', w: weights.W_TP_LIN, m: throughputRatio.toFixed(3), i: breakdown.impact_tp_lin },
+                { label: 'TP Count', w: weights.W_TC, m: result.throughputScore, i: breakdown.impact_tc },
+                { label: 'Consistency (Exp)', w: weights.W_CON_EXP, m: `(${result.consistencyRewardRatio.toFixed(3)})^6`, i: breakdown.impact_con_exp },
+                { label: 'Consistency (Lin)', w: weights.W_CON_LIN, m: result.consistencyRewardRatio.toFixed(3), i: breakdown.impact_con_lin },
+                { label: 'Symmetry (Exp)', w: weights.W_SYM_EXP, m: `(${result.symmetryRewardRatio.toFixed(3)})^6`, i: breakdown.impact_sym_exp },
+                { label: 'Symmetry (Lin)', w: weights.W_SYM_LIN, m: result.symmetryRewardRatio.toFixed(3), i: breakdown.impact_sym_lin },
+                { label: 'Pref. Ratio (Exp)', w: weights.W_PREF_RATIO_EXP, m: `(${result.preferredIntervalRatio.toFixed(3)})^3`, i: breakdown.impact_pref_ratio_exp },
+                { label: 'Pref. Ratio (Lin)', w: weights.W_PREF_RATIO_LIN, m: result.preferredIntervalRatio.toFixed(3), i: breakdown.impact_pref_ratio_lin },
+                { label: 'Pref. Count', w: weights.W_PREF_COUNT, m: result.preferredIntervalCount, i: breakdown.impact_pref_count },
+                { label: 'Jam Penalty', w: weights.W_J, m: result.jamPenalty, i: breakdown.impact_j },
+                { label: 'Simultaneous Penalty', w: weights.W_S, m: result.simultaneousPenalty, i: breakdown.impact_s },
+                { label: 'IQR Penalty', w: weights.W_IQR, m: result.normalizedIQR.toFixed(3), i: breakdown.impact_iqr },
+                { label: 'Physics Violation', w: weights.W_PV, m: result.physicsViolationCount, i: breakdown.impact_pv },
+                { label: 'Zone Reject (<200ms)', w: weights.W_ZONE_REJECT, m: result.rejectCount, i: breakdown.impact_zone_reject },
+                { label: 'Zone Low (200-250ms)', w: weights.W_ZONE_LOW, m: result.lowCount, i: breakdown.impact_zone_low },
+                { label: 'Zone High (750-1500ms)', w: weights.W_ZONE_HIGH, m: result.highCount, i: breakdown.impact_zone_high },
+                { label: 'Zone Jam (>1500ms)', w: weights.W_ZONE_JAM, m: result.jamCount, i: breakdown.impact_zone_jam },
+            ];
+            
+            let html = '';
+            rows.forEach(row => {
+                const impact = row.i || 0;
+                const weight = row.w || 0;
+                const measure = row.m || 0;
+                const isPositive = impact >= 0;
+                html += `<tr><td>${row.label}</td><td>${weight.toExponential(1)}</td><td>${measure}</td><td class="${isPositive ? 'impact-positive' : 'impact-negative'}">${isPositive ? '+' : ''}${impact.toFixed(2)}</td></tr>`;
+            });
+            fitnessBreakdownBody.innerHTML = html;
+        }
+        // ========================================================================
+
+        function initializeApp() {
+            visualizer = new Visualizer(document.getElementById('simulation-container'), configModule);
+
+            loadPasteButton.addEventListener('click', () => {
+                try {
+                    const pastedChromosome = JSON.parse(chromosomeInput.value);
+                    historyControls.style.display = 'none';
+                    loadedHistory = [];
+                    processChromosome(pastedChromosome);
+                } catch (e) {
+                    alert("Error parsing chromosome JSON: " + e.message);
+                }
+            });
+
+            loadFileButton.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const data = JSON.parse(ev.target.result);
+                        if (Array.isArray(data) && data.length > 0) {
+                            loadedHistory = data;
+                            designSelector.innerHTML = '';
+                            data.forEach((chromo, index) => {
+                                const id = chromo.id || `Design ${index + 1}`;
+                                const fitness = chromo.fitness ? chromo.fitness.toFixed(2) : 'N/A';
+                                const option = new Option(`ID ${id} (Fitness: ${fitness})`, index);
+                                designSelector.appendChild(option);
+                            });
+                            historyControls.style.display = 'block';
+                            designSelector.value = data.length - 1;
+                            processChromosome(data[data.length - 1]);
+                            designSelector.dispatchEvent(new Event('change'));
+                        } else if (typeof data === 'object' && !Array.isArray(data)) {
+                            historyControls.style.display = 'none';
+                            loadedHistory = [];
+                            processChromosome(data);
+                        } else {
+                            alert("Invalid or empty history file.");
+                        }
+                    } catch (error) {
+                        alert("Error parsing JSON file: " + error.message);
+                    }
+                };
+                reader.readAsText(file);
+                fileInput.value = '';
+            });
+
+            designSelector.addEventListener('change', () => {
+                const selectedIndex = parseInt(designSelector.value);
+                if (loadedHistory[selectedIndex]) {
+                    Array.from(designSelector.options).forEach(opt => {
+                        opt.classList.remove('selected-design');
+                    });
+                    designSelector.options[selectedIndex].classList.add('selected-design');
+                    
+                    processChromosome(loadedHistory[selectedIndex]);
+                }
+            });
+            
+            runButton.addEventListener('click', () => {
+                if (!currentChromosome) return;
+                if (liveSim) liveSim.stop("Restarted");
+
+                document.getElementById('early-exit-status').textContent = '';
+
+                liveSim = new LiveSimulation(getSettingsFromUI(), visualizer, (report) => {
+                    resultsDisplay.textContent += `\n\nSimulation Ended: ${report.reason}`;
+                    runButton.disabled = false;
+                    stopButton.disabled = true;
+                    updateClumpHistogram(report.clumpHistogram);
+                    updateTimingHistogram(report.intervals);
+                    updateFitnessBreakdown(report);
+                });
+                
+                runButton.disabled = true;
+                stopButton.disabled = false;
+                liveSim.start();
+            });
+            
+            stopButton.addEventListener('click', () => {
+                if(liveSim) liveSim.stop("Stopped by user");
+            });
+        }
+
+        initializeApp();
+    </script>
+</body>
+</html>

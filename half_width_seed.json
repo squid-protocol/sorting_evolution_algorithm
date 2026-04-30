@@ -1,0 +1,38 @@
+{
+  "channelWidth": 1000,
+  "detectorOffset": -500,
+  "conveyorDropX": 1500,
+  "conveyorDropWidth": 150,
+  "boardAngle": 0.4,
+  "shakeAmplitude": 0.55,
+  "cascadingRamps": [
+    {
+      "side": "right",
+      "y_position": 150,
+      "angle": -0.2
+    },
+    {
+      "side": "left",
+      "y_position": 500,
+      "angle": 0.35
+    },
+    {
+      "side": "right",
+      "y_position": 1000,
+      "angle": -0.45
+    },
+    {
+      "side": "left",
+      "y_position": 1500,
+      "angle": 0.5
+    },
+    {
+      "side": "right",
+      "y_position": 2000
+    }
+  ],
+  "batchSize": 50,
+  "numBatches": 3,
+  "dropDelayTime": 5000,
+  "batchDropDuration": 2000
+}

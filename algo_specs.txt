@@ -1,0 +1,565 @@
+﻿This document provides a definitive technical breakdown of the logic underpinning the Genetic Algorithm (GA) for the LEGO Plinko Sorter project.
+The primary purpose of this document is to serve as a single, authoritative reference for understanding the complete decision-making pipeline within the simulation environment, from the high-level system architecture and genetic encoding to the physics simulation, performance evaluation, and validation protocols.
+
+==================================================
+
+System Architecture & Core Principles
+This section outlines the foundational design principles that ensure the robustness, consistency, and efficiency of the entire GA system.
+
+1.A. Decentralized Configuration Model
+The system employs a "Decentralized Configuration" model to manage the computational workload. This architecture consists of two primary components:
+
+1.A.1. The Coordinator (ga_worker): A central script that manages the main evolutionary loop. Its responsibilities include:
+◦ Creating and maintaining the population of designs.
+◦ Managing breeding and mutation.
+◦ Dispatching individual chromosomes to simulators for evaluation.
+◦ Dispatching physics rules to each sub-worker.
+
+1.A.2. The Simulators (sub_worker): A pool of independent, headless worker threads. Each simulator's sole purpose is to receive a single chromosome from the coordinator, run a complete physics simulation for that design, and report the performance score back.
+
+1.B. Positive Control Handshake
+To guarantee the integrity of the communication channel and the basic functionality of the simulation environment, a "Positive Control" test is the very first interaction between a coordinator and a newly initialized simulator. This "wake-up call" verifies that fundamental mechanics are working before any complex evaluations begin.
+
+1.B.1. Coordinator's Role: After a simulator signals it is ready, the coordinator immediately dispatches a command to run a positive control test. The payload for this command is a predefined "null" chromosome, which represents the simplest possible physics scenario (e.g., a single piece dropped with no obstacles).
+
+1.B.2. Simulator's Role: Upon receiving the command, the simulator runs a short, fixed simulation with the null chromosome. It verifies that the piece behaves as expected (e.g., falls correctly under gravity and crosses the detector line). It then reports a success or failure message back to the coordinator.
+
+1.B.3. Diagnostic Value: This initial handshake can immediately diagnose critical, system-level errors, such as:
+◦ Communication timeouts
+◦ Physics engine failures
+◦ Incorrect core logic This process distinguishes fundamental system issues from failures caused by a poorly evolved chromosome design.
+
+1.C. Simulation Core Configuration
+To enforce consistency across all testing modalities (visual, headless, validation), the system relies on a Simulation Core Configuration file. This file is the single, authoritative source for all physics parameters, object properties, and simulation boundaries.
+
+1.C.1. Mandatory Implementation: Any script that instantiates a physics environment (e.g., the visual simulator, GA sub-workers, design validator) must import and use the constants and functions from this file. This eliminates configuration drift and ensures that a design evaluated in one context will behave identically in another.
+
+1.D. In-Line Status Flags
+To minimize version drift and ensure system status is always accurately reported, the system uses tightly coupled, in-line flags instead of global flag objects. Each flag is defined directly within its corresponding logic block. This design ensures that the UI's status indicators, which display the state of these flags as red/green lights, provide a reliable, real-time view of the system's health and the status of critical features, particularly those related to early-exit conditions.
+
+==================================================
+2. S35 Chromosome & Gene Definition
+The S35 chromosome is a structured object defining the complete physical and operational parameters of a single cascade sorter design. It is composed of directly evolvable genes that the genetic algorithm manipulates. All other geometric properties are derived from these genes at simulation time to enforce physical constraints and ensure design validity.
+2.A. Core Machine Genes
+These genes define the global properties of the sorting machine.
+    • boardAngle:
+        ◦ Type: Float (radians)
+        ◦ Range: [0.01, 0.8]
+        ◦ Description: Defines the physical tilt of the entire machine backplane. This is a critical gene that directly influences the effective gravitational force and the behavior of pieces under friction. A value of 0 represents a perfectly vertical board, while π/2 would represent a perfectly horizontal board.
+    • shakeAmplitude:
+        ◦ Type: Float
+        ◦ Range: [0.45, 0.65]
+        ◦ Description: Controls the magnitude of a random horizontal force applied to the physics world during each simulation step. This simulates a physical "shake" or vibration of the machine, designed to prevent pieces from getting stuck in static positions.
+    • detectorHeight:
+        ◦ Type: Integer
+        ◦ Range: [20, 150]
+        ◦ Constraint: This gene is dynamically constrained during generation and mutation. Its maximum valid value is dependent on the y_position of the final ramp to ensure a minimum vertical drop is always maintained. This prevents the creation of designs where the detector is physically higher than the ramp feeding it.
+2.B. Batching & Conveyor Genes
+These genes control the flow and timing of pieces entering the simulation.
+    • batchSize:
+        ◦ Type: Integer
+        ◦ Range: [50, 150]
+        ◦ Description: The number of individual Lego pieces in a single drop batch.
+    • numBatches:
+        ◦ Type: Integer
+        ◦ Range: [1, 3]
+        ◦ Description: The total number of batches to be dropped during a single simulation run.
+    • dropDelayTime:
+        ◦ Type: Integer (milliseconds)
+        ◦ Range: [500, 100000]
+        ◦ Description: The time delay between the start of consecutive batches.
+    • batchDropDuration:
+        ◦ Type: Integer (milliseconds)
+        ◦ Range: [1000, 5000]
+        ◦ Description: The total duration over which all pieces within a single batch are introduced into the simulation. The spawning rate follows an easing curve over this duration. 
+    • conveyorDropX:
+        ◦ Type: Integer
+        ◦ Range: [1200, 2000]
+        ◦ Description: The central X-coordinate of the piece drop zone at the top of the machine.
+    • conveyorDropWidth:
+        ◦ Type: Integer
+        ◦ Range: [50, 300]
+        ◦ Description: The width of the area over which pieces can be randomly spawned, centered on conveyorDropX.
+2.C. Cascading Ramps Definition
+This is a fixed-length array of ramp objects that form the core of the cascade.
+    • cascadingRamps:
+        ◦ Type: Array[Object]
+        ◦ Description: A fixed-length array of 5 ramp objects. Each object contains:
+            ▪ side: (String) A fixed, non-evolvable property ("left" or "right") defining which channel wall the ramp is attached to.
+            ▪ y_position: (Float) The vertical coordinate of the ramp's attachment point on the channel wall. This is the primary evolvable spatial gene for each ramp.
+            ▪ angle: (Float, radians) The ramp's downward angle relative to the horizontal. This is evolvable for the first four ramps. The angle is always stored as a positive value (Math.abs()) and interpreted in the simulation based on the ramp's side. To make the Matter.js engine render correctly, the code applies the following logic: const effectiveAngle = (ramp.side === 'left') ? ramp.angle : -ramp.angle;. A right-side ramp has its angle value inverted.
+            ▪ length of every ramp (except the last one) using the fixed formula: rampLength = channelWidth * 0.85.
+2.D. Special Case: The Final Ramp Polyline
+The final ramp in the cascadingRamps array is a special case with a more complex, two-segment polyline geometry. Its purpose is to provide a more flexible final delivery path to the detector.
+    • Targeting Behavior: The final ramp's geometry is defined by three points: its attachment point on the wall (p0), an intermediate "knee" point (p1), and its connection point at the detector (p2). The endpoint (p2) is procedurally determined to connect to the detector, meaning the ramp's overall angle and length are not directly evolvable.
+    • Evolvable Genes for Final Ramp:
+        ◦ y_position: (Float) The vertical coordinate of the attachment point (p0) on the channel wall. This gene is dynamically constrained to ensure it is always vertically higher than the detector.
+        ◦ finalRampKneeY_factor:
+            ▪ Type: Float
+            ▪ Range: [0.1, 0.9]
+            ▪ Description: A normalized factor (0.0 to 1.0) that determines the vertical position of the intermediate "knee" point (p1) relative to the start (p0) and end (p2) points of the ramp. A value of 0.1 places the knee close to the start; 0.9 places it close to the end.
+        ◦ finalRampKneeX_factor:
+            ▪ Type: Float
+            ▪ Range: [0.1, 0.9]
+            ▪ Description: A normalized factor that determines the horizontal position of the "knee" point (p1).
+            ▪ Constraint: A hardcoded heuristic ensures that finalRampKneeX_factor is always greater than or equal to finalRampKneeY_factor. This forces the knee to bend outwards, preventing the creation of concave or "hook" shapes and ensuring a smoother, convex path for the pieces.
+
+
+
+==================================================
+3. Heuristic-Driven Initialization and Population Seeding
+The genetic algorithm's efficiency is critically dependent on the quality of its initial population (Generation 0). To maximize the probability of success and avoid evaluating physically impossible designs, the system employs a "smart generation" process. This process differs significantly based on whether the evolution is started from scratch or from a user-provided seed file.
+3.A. The "Blueprint" Concept
+At the core of the initialization process is the concept of a "blueprint" chromosome. This blueprint serves as the foundational template from which new individuals are derived. The origin of this blueprint is the key distinction between a standard run and a seeded run.
+3.B. Standard Initialization (No Seed Provided)
+This is the default behavior when the user initiates an evolution without loading a seed file.
+    • Blueprint Source: The system uses an internal, hardcoded chromosome known as the VALIDATED_SEED_TEMPLATE. This template is a simple, pre-vetted design guaranteed to be physically plausible.
+    • Generation 0 Creation: To create the full initial population (e.g., 400 individuals), the system performs the following steps for each required chromosome:
+        1. A fresh copy of the VALIDATED_SEED_TEMPLATE is created.
+        2. This copy undergoes "intelligent randomization." Each gene is assigned a new random value, but these values are constrained by the valid ranges defined in the SOLUTION_SPACE_CONFIG and by dynamic inter-gene rules (e.g., ensuring the final ramp's attachment point is always vertically higher than the detector).
+        3. The resulting individual is added to the population.
+This process results in a diverse, fully randomized, yet physically valid initial population.
+3.C. Seeded Initialization (User-Provided Seed)
+This process is triggered when the user selects "Load Seed & Start." It fundamentally alters the strategy for creating Generation 0 to focus the search around a known area of high potential.
+    • Blueprint Source: The user-provided seed chromosome supersedes and replaces the internal VALIDATED_SEED_TEMPLATE. The user's design becomes the new blueprint for the entire initial population.
+    • Seed File Handling Logic: The system intelligently identifies the correct chromosome to use as the blueprint:
+        ◦ If the loaded .json file contains a single chromosome object, that object is used as the seed.
+        ◦ If the loaded .json file contains an array of chromosomes (e.g., a bestDesignsHistory report), the system automatically extracts the last chromosome from the array, assuming it to be the most evolved and desirable seed.
+    • Generation 0 Creation: With the user's seed established as the new blueprint, the system creates the entire initial population by:
+        ◦ Taking a fresh copy of the user's seed for each of the 400 individuals.
+        ◦ Applying a single, intelligent mutation to each copy. The mutation follows the same smart rules and constraints (e.g., Gaussian distribution for small changes, pinch point prevention) used in later generations.
+This "mutate-from-seed" strategy creates an initial population that is a cluster of variations centered around the promising seed design. It immediately begins exploring the local solution space for refinements and improvements, rather than starting with a wide, random search.
+
+==================================================
+4. Physics Simulation & Environment
+The physics world is defined by the parameters within the simulation_config.js file, ensuring every simulation is identical.
+
+4.A. World Configuration
+
+4.A.1. Physical System Description & Analogy
+The system simulates a real-world Lego sorting machine. This machine is fundamentally a large, flat board containing a vertical channel with a series of alternating ramps—the "zig-zag cascade"—which is leaned against a vertical wall to create a slope. To ensure an unambiguous physical model, we will use the "Four-Legged Ladder" analogy:
+    • The Board as a Ladder: Imagine the sorting board is a rigid, four-legged ladder. It has a defined length and width. The channel walls and ramps are built onto the "front" surface of the ladder's rails.
+• Leaning Against the Wall: The top two legs of the ladder rest against a perfectly vertical wall. The bottom two legs rest on a perfectly horizontal floor.
+• Parallelism: Crucially, the rungs of the ladder (and therefore the top and bottom edges of the sorting board) remain parallel to the floor and the wall at all times. The board does not twist.
+• The "Underneath" Space: This setup creates a triangular space between the wall, the floor, and the tilted board. While this space is not used in the simulation (no pieces go there), it is a key part of the analogy that defines the board as a true 3D object with a distinct orientation.
+
+4.A.2. The boardAngle (θ) Definition
+The boardAngle gene is the sole variable that defines the machine's tilt. It is critical to define this angle precisely.
+• Definition: The boardAngle (θ) is the angle measured between the surface of the board (the ladder) and the vertical wall it is leaning against.
+• Visual Representation:
+|
+| <- Vertical Wall
+|
+|/
+| /
+|/  <-- This is the boardAngle (θ)
+/
+/   <-- The Board / Ladder
+/
+/
+/
+-----------------  <-- Horizontal Floor
+• Range of Motion:
+◦ θ = 0° (0 radians): The board is perfectly vertical, flush against the wall. This is the steepest possible orientation.
+◦ θ = 90° (Math.PI / 2 radians): The board is lying perfectly flat on the floor. This is the shallowest possible orientation.
+
+4.A.3. The 3D-to-2D Simulation Strategy: Perpendicular Projection
+To simulate this 3D system efficiently in a 2D physics engine (Matter.js), we adopt a specific viewpoint.
+• The Perspective: We view the system from a camera that is always perfectly perpendicular to the surface of the board.
+• The Benefit: By using this perpendicular viewpoint, the board's dimensions appear constant to the observer (and to the simulation). The board's length and width do not stretch or shrink as the tilt changes. This eliminates the need for complex scaling calculations and allows us to represent the board as a simple, fixed-size 2D rectangle.
+• The 2D Abstraction:
+◦ The simulation's Y-axis represents the board's length.
+◦ The simulation's X-axis represents the board's width.
+◦ The boardAngle does not change the board's geometry in the 2D simulation; it only affects the forces acting upon it.
+
+4.A.4. Gravity & Friction Implementation in the 2D Model
+From our perpendicular viewpoint, the "downward" pull of gravity appears to weaken as the board tilts closer to horizontal. We model this by modifying the magnitude of the gravity vector within the 2D simulation.
+• Gravity Calculation: The effective gravity (g_eff) that pulls pieces along the simulation's Y-axis is calculated as: g_eff = g_base * cos(θ)
+This is implemented in the BOARD_ANGLE_CALC_FN function. The gravity.x component is always zero, as the tilt in this model does not induce a sideways gravitational force.
+• Friction Model: The simulation models a constant sliding action. Because the 2D simulation plane is the board's surface, all Lego pieces are considered to be in constant contact with it. The friction property is therefore always active, opposing the motion of the pieces as they are pulled "down" the Y-axis by the effective gravity. This correctly simulates the real-world scenario where the pieces are always sliding against the backplane and/or pegs.
+
+Angle (Radians)   Angle (Degrees)   Physical Meaning in Simulation
+0.0               0°                Perfectly Vertical. Pieces experience the maximum downward force of gravity.
+~0.262 (π/12)     15°               Very Steep Tilt. Near-maximum gravity.
+~0.524 (π/6)      30°               Steep Tilt. Strong gravitational pull.
+~0.785 (π/4)      45°               Standard Tilt. A balanced angle, often a good starting point
+~1.047 (π/3)      60°               Gentle Tilt. Significantly reduced gravitational force.
+~1.309 (5π/12)    75°               Very Gentle Tilt. Minimal gravity; pieces will move very slowly.
+~1.571 (π/2)      90°               Perfectly Horizontal. No downward gravitational force; pieces will not move towards the detector.
+
+4.A.5. Solver Iterations: Explicitly set the solver iterations for headless configurations to the same high-quality, stable values used by the live simulator, ensuring both environments produce identical physical outcomes.
+
+4.B. High-Performance Simulation Loop
+
+4.B.1. The Problem: Legacy Loop: The legacy simulation loop was based on a simple while loop that incremented a simulationTime variable by a fixed amount (TIME_STEP) on each iteration. This design had three critical flaws:
+◦ Inaccuracy: It assumed each loop iteration took exactly 16.67ms to execute. In reality, complex physics calculations or browser throttling could cause the actual execution time to vary, leading to a significant drift between the simulationTime and real-world time.
+◦ Performance Bottleneck: The loop's speed was fixed. It could not leverage powerful hardware to complete simulations faster, creating an artificial performance ceiling.
+◦ Instability: As a synchronous, long-running task, it was prone to accumulating floating-point errors and could make the browser unresponsive.
+
+4.B.2. The Solution: Time-Corrected Architecture: The simulation loop must be re-engineered into a high-performance, time-corrected architecture common in game development.
+◦ Outer Loop (while(true)): This loop runs as fast as the hardware will allow. On each iteration, it measures the actual real-world time that has passed since the last iteration using performance.now().
+◦ Accumulator: This real-world time delta is multiplied by a TURBO_FACTOR (e.g., 100) and added to an accumulator variable. This accumulator represents a bank of "simulation time" that needs to be processed.
+◦ Inner Loop (while (accumulator >= TIME_STEP)): A nested loop runs only when there is enough time in the accumulator. It processes the simulation in fixed, discrete TIME_STEP increments (e.g., 16.67ms), subtracting that amount from the accumulator after each step.
+
+4.B.3. Benefits: This model decouples the simulation from the hardware speed. On a fast machine, the outer loop runs many times, quickly filling the accumulator and allowing for thousands of physics steps to be processed in a fraction of a second. On a slower machine, it runs fewer times but remains accurate because it is always based on the real time that has elapsed. This results in a simulation that is dramatically faster, more accurate, and more stable.
+
+4.C. Standardized Physics Objects
+• PIECE_LIBRARY: An array of objects defining the standard LEGO pieces, including their precise vertex data. This library must be used for spawning pieces in all simulations.
+• PIECE_PHYSICS_PROPERTIES: An object defining the material properties applied to every LEGO piece upon creation, such as:
+◦ restitution: 0.1 (Bounciness)
+◦ friction: 0.3
+◦ density: 0.01
+• SIM_CONFIG: An object containing global constants like BOARD_WIDTH and BOARD_HEIGHT.
+• SENSOR_CONFIG: An object defining the dimensions of the exit sensor.
+• MAX_SIM_TIME: The absolute maximum time (in ms) a single simulation run can last before being terminated.
+
+4.D. Atomic Exit Mandate
+A physics body must be removed from the Matter.World in the same simulation step that it is registered as "exited" at the sensor.
+
+4.E. Realistic Lego Spawning Curve: To better mimic lego pieces being released from a mechanism that would have a spatial distribution to the pieces, around a central mean with a standard deviation of pieces, we have mimic this with trig. The code implements a specific cosine easing curve (0.5 * (1 - Math.cos(dropProgress * Math.PI))) to govern the rate of piece spawning. This means pieces spawn slowly at the beginning of the drop, rapidly in the middle, and slowly again at the end, rather than at a constant linear rate.
+
+==================================================
+5. Simulation Integrity & State Management
+A critical requirement of the simulation suite is the Simulation Integrity Mandate, which dictates that all physics-enabled components (GA workers, simulators, validators) MUST use the single source of truth: simulation_config.js. But he "unified physics mandate" is more than just the constants in the config file; it's also about how the simulation is run as well.
+
+5.A. The Unified Physics Mandate & Cache-Busting
+
+5.A.1. The Problem: Browser Caching: However, modern web browsers aggressively cache script files to improve performance. When a user makes changes to simulation_config.js (e.g., adjusting MAX_SIM_TIME) and reloads a tool like the Standalone Simulator or the main GA, the browser often loads the old, cached version of the config file from memory instead of downloading the newly modified one. This leads to confusing behavior where changes are not reflected, and simulation integrity is compromised.
+
+5.A.2. The Solution: Run-Based Cache-Busting: To solve this, we've implemented a run-based cache-busting strategy. This approach balances the need for fresh data with the efficiency of caching. The coordinator thread (e.g., validator_worker.js or ga_worker.js) is now solely responsible for loading the configuration. It then injects the entire configuration object as a direct message payload to each sub-worker upon initialization. This guarantees every worker in a given run operates on the exact same set of rules and benefits from the run-based cache-busting initiated by the main thread.
+
+5.A.3. Implementation Strategy: The core principle is to append a unique query string to the script URL. The browser treats a URL like simulation_config.js?run=123 as a completely different file from simulation_config.js?run=456. Our strategy is as follows:
+◦ A single, unique runId (based on the current timestamp) is generated at the very beginning of a session (i.e., when the main index.html or simulator.html page is loaded).
+◦ This runId is passed down through the entire application chain: from the main page to the GA coordinator worker, and from the coordinator to every simulation sub-worker.
+◦ Every time a script requests simulation_config.js, it appends this same runId. This provides the best of both worlds:
+◦ Freshness on New Runs: When you reload the main page to start a new evolution, a new runId is generated. The browser sees a new URL and is forced to download a fresh copy of simulation_config.js.
+◦ Efficiency During a Run: All hundreds or thousands of sub-workers spawned during a single evolution will use the same runId. The browser downloads the config file once for the very first worker and then serves the identical, cached copy to all subsequent workers in that run, avoiding redundant network requests.
+
+5.A.4. File-Specific Changes: This strategy required minor changes to the initialization logic of the following files:
+◦ main_S33.js (The Initiator)
+▪ Change: Generates the runId using new Date().getTime() when the page loads.
+▪ Why: This is the top-level entry point. It is responsible for creating the unique ID for the entire session and passing it to the main GA worker (ga_worker_S33.js) when it is created.
+◦ ga_worker_S33.js (The Coordinator)
+▪ Change: Receives the runId from main_S33.js during its init command. It uses this ID for its own importScripts call and, crucially, passes the same runId down to every sub_worker_S33.js it spawns.
+▪ Why: This ensures that the coordinator and all its children are operating from the exact same version of the physics configuration.
+◦ sub_worker_S33.js (The Simulator)
+▪ Change: Receives the runId from ga_worker_S33.js during its init command and uses it in its importScripts call.
+▪ Why: This final step completes the chain, guaranteeing that the headless physics simulation uses the correct, run-specific config file.
+◦ simulator_S33.html (The Standalone Tool)
+▪ Change: This file is self-contained and doesn't have a multi-stage worker setup. It uses the simplest form of cache-busting: generating a new timestamp-based runId every time the page is loaded.
+▪ Why: Since the user's intent when using the simulator is always to test with the absolute latest version of the config, this aggressive, single-use cache bust is appropriate and ensures immediate feedback on any changes.
+
+5.B. The Pristine State Mandate
+
+5.B.1. The Problem: State Contamination: Re-using a single, persistent simulation instance across multiple tests led to a critical state contamination bug, where the results of one run would corrupt the initial state of the next, invalidating results.
+
+5.B.2. The Solution: Per-Job Instantiation: To guarantee the statistical independence of every run, workers running physics simulations must adhere to the Pristine State Mandate. A new, clean Simulation() instance must be created for every single job a worker receives. This eliminates all possibility of state contamination and ensures every simulation starts from an identical, clean slate.
+
+==================================================
+6. Genetic Algorithm Process
+The GA process is designed to balance the exploration of new designs with the exploitation of successful ones.
+
+6.A. Core Loop
+
+6.A.1. Population Size: The GA maintains a large population of individuals (e.g., 300-800). The system then adds 5 subworker jobs to that supplied value to implement a "Late to Dinner" sub-worker Model. It dispatches a fixed number of extra, redundant jobs (5) and considers a generation complete as soon as the supplied and required number of unique evaluations are returned. Any results arriving after this point are discarded. This is a significant operational improvement to prevent slow workers from becoming a bottleneck. So if the population size is 300, 305 jobs are dispatched and the generation ends when we get 300 worker results back. As long-running jobs are typically stalled, this prevents the multi-threaded capable CPU from sitting mostly empty while we wait on long slow jobs that may be sub-par in some undefined way. Those jobs are “late for dinner” and get deleted. 
+
+6.A.2. Evaluation: The coordinator dispatches each chromosome to the pool of simulator threads for evaluation. Each simulator runs a full physics test and returns a fitness score.
+
+6.A.3. 
+
+6.B. Elitism & Fitness Averaging
+This process occurs at the end of each generation, during the creation of the next.
+
+6.B.1. Selection of Elites: After all individuals in a generation have been simulated and their fitness scores calculated, the population is sorted from highest to lowest fitness. A predefined number of the top-performing individuals (defined by ELITISM_COUNT, e.g., 8) are selected as "elites."
+
+6.B.2. Preservation of Genes: These elite chromosomes are passed directly into the next generation's population, preserving their successful genetic code without any crossover or mutation.
+
+6.B.3. Mandatory Re-evaluation: Crucially, before an elite individual is added to the new population, its fullResult object from the previous simulation is deleted. This marks the individual as unevaluated and ensures that it will be sent to a simulation worker for a completely new test run alongside all the newly-bred "child" chromosomes in the next generation.
+
+6.B.4. Fitness Averaging: When the re-evaluated elite individual returns from the simulation worker, its new finalScore is not treated as its definitive fitness. Instead:
+◦ The new score is appended to an internal array on the chromosome object called fitnessHistory.
+◦ The individual's final fitness for the new generation is then recalculated as the arithmetic mean of all scores present in its fitnessHistory.
+
+6.B.5. Elite Retest Limit: The code defines a constant ELITE_RETEST_LIMIT of 20. This means an elite chromosome will only be re-evaluated for a maximum of 20 generations. After that, it is no longer re-tested, even if it remains in the elite group. This prevents the GA from wasting resources on a solved champion and is not mentioned in the spec's elitism section.
+
+6.B.6. Advantages: This protocol has several key advantages:
+◦ Statistical Robustness: A design must perform well consistently across multiple, independent simulations to maintain a high average fitness. A "one-hit wonder" that achieved a high score due to a random fluke will see its average fitness regress toward the mean in subsequent generations.
+◦ Resilience to Anomalies: Conversely, a truly excellent design is protected from being unfairly eliminated by a single, random, low-scoring simulation (e.g., due to a rare physics anomaly). Its high average from previous runs will buffer the impact of one bad result.
+◦ Promotes Stability: By smoothing out the fitness landscape, this method leads to more stable and predictable evolutionary progress, reducing chaotic jumps in the population's overall performance from one generation to the next.
+
+6.C. Breeding Strategy
+
+6.C.1. Breeding Pool Size: This should be a defined value const BREEDING_POOL_SIZE_MAX = 20. So that it is changeable by the user easily. 
+
+6.C.2. Breeding Pool Composition: A breeding pool is created for generating the next generation. This pool is strategically composed of:
+◦ A large majority of top-performing individuals. 95%
+◦ A small percentage of "underdogs" from the bottom half of the population to maintain genetic diversity. 2.5%. (Please note, this population was named stragglers but renamed as that term was being used in another context (long running sub-worker threads that were holding up a generation). 
+◦ A small percentage of new, randomly generated chromosomes to introduce novel traits. 2.5%
+
+6.C.2. Crossover: To create a new "child" chromosome, two parents are selected from the breeding pool. The child inherits each parameter for each gene from one of the two parents, chosen randomly with a 50/50 probability. This method ensures a thorough and unbiased mixing of parental traits.
+
+6.D. Adaptive Mutation
+Each gene in a newly created child chromosome has a small chance of being mutated (randomly altered). The mutation rate itself is adaptive:
+
+6.D.1. Rate Adjustment:
+◦ Rate Increase: If the population's best fitness score stagnates (does not improve for a set number of generations), the mutation rate is increased to encourage more radical exploration and break out of the performance plateau.
+◦ Rate Decrease: During periods of successful improvement, the mutation rate is slowly decreased, allowing the algorithm to perform fine-tuning on the successful solution space it has found.
+
+6.D.2. Bounded Rates: The mutation rate is capped between a defined minimum and maximum to maintain stability.
+
+6.E. Intelligent Mutation Models
+
+6.E.1. Old System: Uniform Random: Initially, this was a simple uniform random process. For example, a ramp's position could be changed by any random value between -50 and +50, with every value being equally likely. This often resulted in jarring, destructive changes.
+
+6.E.2. New "Physics-Aware" Model: The mutation function is no longer "blind"; it is now aware of the physical rules of the world it is designing for. We have built a set of hard constraints directly into the mutation logic to prevent the creation of impossible designs:
+    • Constrained Y-Mutation: When a ramp's y_position is mutated, the change is clamped to prevent it from moving above the ramp directly above it or below the ramp directly below it, always maintaining MIN_VERTICAL_CLEARANCE.
+    • Constrained Angle Mutation: A ramp's angle mutation is clamped to prevent it from becoming shallower than the ramp above or significantly steeper than a reasonable physical limit. This enforces the "progressive steepness" heuristic.
+    • Ramp Crossover Prevention: After any angle mutation, a check is performed to ensure the mutated ramp does not physically intersect with the ramps immediately above or below it. If a crossover is detected, the mutation is rejected.
+
+6.E.3. New "Fine-Tuning" Model (Gaussian Distribution): We now use a Gaussian (or Normal) distribution for all spatial mutations (changes to x and y coordinates).
+◦ How it Works: This method follows a "bell curve." When a mutation occurs, the most likely outcome is a very small change. Moderate changes are less likely, and large, drastic jumps are very rare. This allows the GA to perform delicate fine-tuning.
+◦ When it finds a good design, mutation is more likely to make small, incremental improvements rather than radical, destructive changes. It still retains the ability to make large leaps to escape a creative rut, but it favors refinement, leading to more stable and consistent progress.
+
+
+
+==================================================
+7.A. Pre-Simulation Geometric Validation
+Before a chromosome is dispatched for a costly physics simulation, the ga_worker performs a series of purely geometric pre-flight checks based on the heuristics defined in Section 3.
+    1. Ramp Crossover: Verifies that no ramp's geometry physically intersects with the ramp immediately above or below it.
+    2. Vertical Pinch Point: Performs the vertical clearance test between the tip of each ramp and the body of the ramp below it. If the clearance is less than PINCH_POINT_THRESHOLD, the system attempts to correct the y_position of the lower ramp. If a valid correction cannot be found, the chromosome is rejected.
+Designs that fail these checks are immediately rejected or corrected, freeing up simulation resources for plausible candidates.
+7.B. In-Simulation "Sacrificial Probe Piece" Test
+For designs that pass geometric validation, the simulation begins with a test to quickly assess passability.
+    1. Largest Piece Test: The largest LEGO piece from the library is dropped from the center of the conveyor drop zone. The piece is frictionless and vibrating to give it the best possible chance of traversing the machine.
+    2. Pass/Fail Condition: The design is considered fundamentally flawed if the sacrificial piece fails to reach the detector. Failure is determined by two conditions checked in parallel:
+        ◦ Hard Time Limit: The piece does not cross the detector line within a generous time limit (e.g., 30 seconds of simulation time).
+        ◦ Stuck Piece Detection: The piece's velocity remains below a minimum threshold for a specified duration, indicating it is permanently stuck. If either condition is met, the simulation is terminated immediately, and the chromosome is assigned a very low fitness score.
+7.C. Early Exit Conditions
+During the main simulation with a full batch of pieces, several rules are in effect to terminate unproductive or failed runs early, saving computational resources.
+    1. Timeout: The run is terminated if it exceeds the MAX_SIM_TIME.
+    2. Catastrophic Clump Exit: The run is terminated if a very large number of pieces (e.g., >20) pass through the sensor in a single simulation frame, indicating a complete failure of singulation.
+    3. Physics Violation: This is not a terminating event. If a piece falls through the world geometry (e.g., through a ramp or the floor), the simulation counts the violation, removes the single offending piece, and continues running. The total number of violations is then multiplied by a large negative weight (W_Physics_Violation) and subtracted from the design's fitness score.
+    4. Stagnation Exit: If a significant amount of time passes with no new pieces exiting the machine, the run is considered unproductive (jammed) and is terminated.
+7.D. Jam Detection & Handling
+A two-tiered system is used to identify and handle terminal jams, which triggers the "Stagnation Exit" condition.
+    1. Tier 1: "Hard Stuck" Trigger: The system tracks the movement of every piece within the simulation. If a piece's velocity remains below a threshold for a specified duration, it is flagged as "stuck." The early exit is triggered when the number of stuck pieces exceeds a percentage of the total piece count still inside the machine.
+    2. Tier 2: "At-Risk" Estimator: This runs after the Tier 1 trigger. To score the failed design, it estimates the final throughput by the following heuristic:
+        ◦ if zero pieces have exited so far, the estimated pieces past the detector = 0
+        ◦ else: we average the result of these three methods:
+            ▪ State-Based Method: (Pieces already exited) + (Pieces still moving faster than SLOW_MOVEMENT_VELOCITY_THRESHOLD) - stuck pieces.
+            ▪ Rate-Based Method: (Pieces already exited) - stuck pieces - (Extrapolated pieces that might exit based on the total piece exit rate from time 0 to current simulation time, limited to the remaining possible pieces and this rate is applied for the remaining time). Note: This estimation method is overly optimistic.
+            ▪ Deep Pessicism: This method produces a strong pessimistic average. The throughput is calculated by taking the current pieces that have successfully exited and dividing that by the total pieces that should have been released (batchsize * batchnumber).
+
+
+==================================================
+8. Fitness Function
+The entire purpose of the Genetic Algorithm (GA) is to evolve better LEGO sorter designs. The fitness equation is the oracle that tells the GA how "good" any given design is. It takes the raw output from a physics simulation—a collection of exit times, piece counts, and jam events—and condenses it into a single numerical score: the fitness score. A higher score is always better. The challenge is that "good" is not a single concept. A "good" sorter is not just fast; it's also reliable, consistent, and predictable. Our fitness equation is therefore a composite function, carefully balancing a series of rewards and penalties to create a nuanced definition of performance.
+
+8.A. High-Level Formula
+The high-level formula is simple: Fitness = ∑Rewards − ∑Penalties Each reward and penalty is first calculated as a raw measure, then multiplied by a weight (hyperparameter) that you can control in the UI. This allows us to tune the evolutionary pressure, telling the GA what aspects of performance we currently value most. Impact = Weight × Measure Let's break down each term.
+
+8.B. Rewards
+Rewards are positive terms that increase the fitness score. They encourage designs that exhibit desirable behaviors.
+
+8.B.1. Throughput (Efficiency):
+◦ Goal: To process as many pieces as possible in the given time. This is the most fundamental measure of a sorter's efficiency.
+◦ Raw Measure: We first calculate the throughputRatio, which is simply the number of pieces that successfully exited the machine (throughputScore) divided by the total number of pieces that were dropped (totalPieces).
+throughputRatio = throughputScore / totalPieces
+◦ Calculations & Weights: Throughput is so important that we reward it in three different ways to create a sophisticated incentive structure.
+▪ Exponential Reward (W_TP_EXP): Impact_TP_EXP = W_TP_EXP * (throughputRatio)^6 Purpose: This provides a massive reward for achieving near-perfect throughput. The exponential curve means that the difference between 98% and 99% throughput is rewarded far more heavily than the difference between 70% and 71%. It pushes the evolution towards extremely high reliability.
+▪ Linear Reward (W_TP_LIN): Impact_TP_LIN = W_TP_LIN * throughputRatio Purpose: This provides a steady, constant reward for any improvement in throughput. It ensures that even early in the evolutionary process, designs that are slightly better than their peers are recognized and promoted.
+▪ Count Reward (W_TC): Impact_TC = W_TC * throughputScore Purpose: This rewards the raw number of pieces sorted. It acts as a tie-breaker and provides a simple, direct incentive that is easy to understand and respond to for the GA.
+
+8.B.2. Consistency (Regularity):
+◦ Goal: To make the time between piece exits as regular and predictable as possible. A consistent machine is easier to integrate into a larger system.
+◦ Raw Measure: We first collect all the time intervals (in milliseconds) between consecutive piece exits. From this list of intervals, we calculate the Coefficient of Variation (CV), which is the standard deviation of the intervals divided by the mean of the intervals. A lower CV means less variation and more consistency. We then convert this into a consistencyRewardRatio between 0 and 1, where 1 is perfectly consistent.
+mean = ∑intervals / count(intervals) stdDev = sqrt(∑(interval_i − mean)^2 / count(intervals)) CV = stdDev / mean consistencyRewardRatio = max(0, 1 − CV)
+◦ Calculations & Weights: Like throughput, consistency is rewarded both exponentially and linearly.
+▪ Exponential Reward (W_CON_EXP): Impact_CON_EXP = W_CON_EXP * (consistencyRewardRatio)^6 Purpose: Massively rewards designs that are exceptionally consistent, pushing the evolution to fine-tune the timing to a very high degree.
+▪ Linear Reward (W_CON_LIN): Impact_CON_LIN = W_CON_LIN * consistencyRewardRatio Purpose: Provides a steady incentive to improve consistency at all levels.
+▪ this complex metric is only calculated if there are more than 5 exit intervals. If 5 or fewer pieces exit, this is assigned a high penalty value of 10, and the consistency/symmetry rewards remain 0. This prevents skewed calculations from tiny sample sizes.
+
+8.B.3. Symmetry (Predictability):
+◦ Goal: To encourage a balanced, symmetrical distribution of exit interval times around the mean. A symmetrical (bell-shaped) distribution is often more predictable than a skewed one.
+◦ Raw Measure: We count how many intervals are greater than the mean. In a perfectly symmetrical distribution, this would be 50%. We calculate the symmetryRewardRatio based on how close the design's distribution is to this 50% ideal.
+symmetryRewardRatio = 1 − |(count(intervals > mean) / count(intervals)) / 0.5 − 1|
+◦ Calculations & Weights: Symmetry is also rewarded both exponentially and linearly.
+▪ Exponential Reward (W_SYM_EXP): Impact_SYM_EXP = W_SYM_EXP * (symmetryRewardRatio)^6 Purpose: Strongly encourages perfectly symmetrical timing distributions.
+▪ Linear Reward (W_SYM_LIN): Impact_SYM_LIN = W_SYM_LIN * symmetryRewardRatio Purpose: Provides a general push towards more symmetrical behavior.
+
+8.B.4. Preferred Interval Targeting:
+These terms are designed to work together to strongly incentivize designs that produce a high number and high percentage of piece-to-piece exit intervals within the preferred range of 250ms to 750ms.
+◦ Count Reward (W_PREF_COUNT): This is a simple, linear reward that provides a direct incentive for every piece that falls within the target range.
+▪ Measure: preferredIntervalCount - The raw count of exit intervals between 250ms and 750ms.
+▪ Formula: Impact_PREF_COUNT = W_PREF_COUNT * preferredIntervalCount
+▪ This term ensures that any improvement, no matter how small, is positively reinforced.
+◦ Exponential Ratio Reward (W_PREF_RATIO_EXP): This is a powerful, exponential reward that provides a massive bonus to designs where a high percentage of the total exit intervals fall within the preferred range.
+▪ Measure: preferredIntervalRatio - The number of preferred intervals divided by the total number of intervals.
+▪ Formula: Impact_PREF_RATIO_EXP = W_PREF_RATIO_EXP * (preferredIntervalRatio)^3
+▪ The cubed term means that the reward for achieving 95% consistency is exponentially greater than the reward for achieving 85%, pushing the evolution towards extremely high precision and reliability within the target range.
+
+8.C. Penalties
+Penalties are negative terms that decrease the fitness score. They punish undesirable behaviors and guide the evolution away from flawed designs.
+
+8.C.1. Core Failure Penalties: These penalties address fundamental failures in the sorting process.
+◦ Jam Penalty (W_J):
+▪ Measure: The raw count of pieces that were dropped but did not successfully exit (totalPieces - throughputScore).
+▪ Calculation: Impact_J = −W_J * (totalPieces − throughputScore)
+▪ Purpose: The most straightforward penalty. It directly punishes any design that loses pieces.
+◦ Simultaneous Penalty (W_S):
+▪ Measure: We look at the "clump histogram," which counts how many pieces exit in the same simulation frame. For every clump larger than 1, we apply a squared penalty. A clump of 2 adds a penalty of 4 (22), a clump of 3 adds 9 (33), etc.
+▪ Calculation: Impact_S = −W_S * ∑(clumpSize^2 for each clump where clumpSize > 1)
+▪ Purpose: To strongly punish designs that fail to singulate pieces. The squared term makes it exponentially more painful to release large clumps, forcing the GA to find geometries that separate pieces effectively.
+◦ IQR Penalty (W_IQR):
+▪ Measure: The Interquartile Range (IQR) of the exit intervals, normalized by the mean interval. The IQR measures the spread of the middle 50% of the data, making it a robust measure of consistency that is less sensitive to extreme outliers than standard deviation.
+▪ Calculation: Impact_IQR = −W_IQR * ((Q3_interval − Q1_interval) / mean_interval)
+▪ this complex metric is only calculated if there are more than 5 exit intervals. If 5 or fewer pieces exit, normalizedIQR is assigned a high penalty value of 10, and the consistency/symmetry rewards remain 0. This prevents skewed calculations from tiny sample sizes and is a practical heuristic not found in the spec.
+▪ Purpose: This complements the Consistency Reward. While the consistency reward encourages low variation overall, this penalty specifically punishes designs with a wide, unpredictable "middle range" of performance, even if the absolute outliers are rare.
+
+8.C.2. Interval Zone Penalties:
+◦ Goal: To give us fine-grained control over the desired speed of the sorter. We define four distinct time zones for the intervals between piece exits and apply a specific penalty to any piece that falls into an undesirable zone.
+◦ Measures: We simply count the number of exit intervals that fall into each of the four zones:
+▪ rejectCount: Intervals < 200ms (too fast, likely to be misidentified by a camera).
+▪ lowCount: 200ms <= Intervals < 250ms (the slightly too fast zone but allowable).
+▪ highCount: 750ms <= Intervals < 1500ms (too slow, hurting throughput).
+▪ jamCount: Intervals >= 1500ms (so slow it suggests a potential micro-jam).
+◦ Calculations & Weights: Each zone has its own weight, allowing for precise control.
+Impact_Reject = −W_ZONE_REJECT * rejectCount Impact_Low = −W_ZONE_LOW * lowCount Impact_High = −W_ZONE_HIGH * highCount Impact_Jam = −W_ZONE_JAM * jamCount
+
+8.D. Physics Violation Penalty
+Previously, if a single LEGO piece fell through the floor or wall (a "physics violation"), the simulation would immediately stop and the design would be marked as a total failure. This was a "sudden death" system that was too harsh. A design that was 99% perfect but had one unlucky piece would be treated the same as a completely broken design.
+
+8.D.1. The New System: A "Points Deduction" Model: We've transformed this into a fitness penalty.
+
+8.D.2. How it Works: When a piece tunnels through a wall, the simulation now:
+◦ Counts the violation.
+◦ Removes the single offending piece.
+◦ Continues running.
+
+8.D.3. The Impact: At the end of the simulation, the total number of violations is multiplied by a large negative weight (W_Physics_Violation) and subtracted from the design's fitness score.
+
+8.D.4. Why it's Smarter: This is like a test where you get points deducted for wrong answers instead of failing the entire exam for one mistake. The GA can now learn the difference between a design that loses one piece (a small penalty) and a design that loses a hundred pieces (a massive penalty). It provides a much richer, more granular signal for what makes a design robust.
+
+8.E. Final Score Calculation
+The final fitness score for a single simulation run is the sum of all these weighted impacts. This single number is what the GA uses to rank the design against its peers, select the best for breeding, and ultimately drive the evolution towards robust, high-performance solutions. By adjusting the W_ values in the UI, you are directly manipulating the definition of "good" and guiding the entire optimization process.
+
+==================================================
+9. Heuristic-Driven Initialization
+Every new chromosome created from scratch is based on a template from half_seed_cleaned.json, which was validated to work in the S35 simulator. 
+
+==================================================
+10. System Comparison: GA vs. Validator
+
+10.A. Genetic Algorithm (GA) System
+The primary purpose of the GA is exploration and optimization. It evaluates a large, diverse population of chromosomes over many generations to discover novel, high-performing designs. Its goal is to answer the question: "What is the best possible design?"
+
+10.B. Design Validator (VA) System
+The primary purpose of the VA is deep analysis and verification. It takes a single, promising chromosome (typically the final output from a GA run) and subjects it to hundreds or thousands of identical simulation runs. Its goal is to build a robust statistical profile of that one design and answer the question: "How good is this specific design, really?"
+
+10.C. Feature Comparison Table
+Feature                  Genetic Algorithm (GA) System                                                       Design Validator (VA) System
+Primary Goal             Evolve new designs                                                                  Statistically analyze a single design
+Simulation Scope         Many different chromosomes, few runs each                                           One chromosome, hundreds of runs
+Output / Report          Metareport - Tracks fitness and evolutionary progress over generations.             Validation Report - Detailed statistical breakdown of a single design's performance.
+
+==================================================
+11. System Tooling
+A suite of tools supports the development, execution, and analysis of the Genetic Algorithm.
+• Standalone Visual Simulator: A debugging tool for loading and visually inspecting the behavior of a single, specific chromosome in a live, interactive simulation.
+• Metareport Visualizer: An analysis tool that loads the final report from a GA run and generates charts to visualize fitness over time, reasons for early exits, and the evolution of key genetic traits across generations.
+• Heuristic Analyzer: An advanced tool for refining early-exit parameters. It allows a user to run a simulation once to log detailed data, then perform "what-if" analysis by changing heuristic values (e.g., stuck duration) to see how it would have affected the outcome.
+• Chromosome Editor: A tool that allows for "human-in-the-loop" design, enabling manual creation and editing of chromosomes.
+
+==================================================
+12. S34 Topological Cartographer (System Upgrade)
+This document outlines a major architectural upgrade to our Genetic Algorithm (GA) system, codenamed the S34 Topological Cartographer. The current GA operates as a "blind" optimization engine; it is effective at finding high-fitness solutions but provides little insight into why those solutions are effective or what the overall "shape" of the problem space looks like. This project will transform the GA from a simple optimizer into a powerful, two-part guided discovery engine. A browser environment is not suited for this scale of data handling, as storing the entire multi-gigabyte log in memory would inevitably crash the browser tab. Therefore, the system employs a "Decoupled Analysis Pipeline" that separates the data generation (which occurs in the browser) from the data analysis (which is performed offline). The system will consist of:
+• A Surveyor (The search team, led by the GA-worker and searched by the sub-workers) (The JavaScript GA): A massively parallel search engine that runs continuously to gather vast amounts of data on the design space.
+• A Cartographer (A Python Analysis Toolkit): An intelligent analysis tool that uses Principal Component Analysis (PCA) and clustering to create a topographical map of the fitness landscape from the Surveyor's data.
+This new system will allow a human strategist to visualize the entire solution space, identify distinct families of high-performing designs, and issue specific commands to the GA to guide its search, dramatically accelerating progress and yielding unprecedented insight into the problem itself.
+
+12.A. The Vision: From Blind Ascent to Mapped Exploration
+Imagine trying to find the highest point in a vast, unknown mountain range in the dark.
+
+12.A.1. The Current GA (Blind Ascent): Our current GA is like a team of hikers with flashlights. Each hiker (a chromosome) can see the ground immediately around them and can tell if they are going uphill (increasing fitness). They can communicate their positions, and the team will gradually converge on a peak. However, they have no map and no sense of the overall range. Are they on the highest mountain, or just a foothill? They have no way of knowing.
+
+12.A.2. The S34 Cartographer (Mapped Exploration): The new system gives the team a satellite and a map maker.
+◦ The team of hikers (the Surveyor) spreads out and gathers thousands of elevation readings (fitness scores) across the entire range.
+◦ The map maker (the Cartographer) takes this data and creates a detailed topographical map. This map reveals not just the peaks, but the ridgelines, valleys, and distinct mountain clusters.
+◦ With this map, a strategist can now issue intelligent commands: "Team A, you're on a promising ridgeline; follow it north. Team B, you've found a cluster of smaller peaks; explore that area intensely. Team C, that entire western quadrant is a plateau; let's send some scouts to that unexplored eastern region."
+This is the leap we are making: from a reactive search to a proactive, intelligent, and guided exploration.
+
+12.B. Functional Annotation Metrics
+The PCA will be performed on a combined dataset that includes both the core chromosome genes (like boardAngle, funnel_profile.width, etc.) and the new annotated metrics calculated by the sub_worker. This allows the PCA to find correlations between the design choices we make (the genes) and the physical behaviors they produce (the annotations). Here are examples of the kinds of quantitative measures the sub_worker should calculate and annotate:
+▪ Static Friction Safety Margin: For each ramp, calculate the component of gravity pulling a piece down its slope (g * sin(angle)). We can then create a metric representing the average "safety margin" above the coefficient of static friction. A low safety margin indicates a high risk of pieces getting stuck.
+▪ Number of Active Components: A simple count of how many ramps and peg matrices are currently active in the design.
+▪ Total Peg Count: The sum of all pegs across all active peg matrices.
+▪ Ramp Clearance: For the bottom-most coordinate of a complex ramp, how far away is it from the nearest wall component.
+◦ Benefit: When the PCA is run, its components will represent understandable relationships, like "the trade-off between upper-funnel width and ramp steepness," providing actionable strategic insights.
+
+12.C. Stage 1: Data Generation (Browser)
+The browser's role is simplified to focus solely on running the GA and periodically saving data to disk, ensuring stability and enabling long-duration runs.
+• Worker-Level Memory Management: The ga_worker_S34.js no longer accumulates the entire survey log in its memory. After each generation is fully evaluated, the worker bundles the results into a single data chunk.
+• Per-Generation Data Transfer: The worker sends this chunk to the main UI thread via a generation_survey_data message and then immediately discards its local copy. This keeps the worker's memory footprint small and constant.
+• UI-Level Chunking: The main_S34.js script listens for these messages and collects the data chunks into a surveyDataChunks array in the browser's main memory.
+• The "Download Log & Clear" Workflow: The UI provides a "Download Log & Clear" button. This action bundles all currently collected survey data chunks into a single .jsonl file for the user to save locally. It then immediately clears the surveyDataChunks array, freeing the browser's memory. This workflow allows the GA to run for days or weeks, generating terabytes of data if needed, as long as the user periodically saves and clears the data chunks.
+
+12.D. Stage 2: Data Analysis (Local Python)
+The heavy data processing is offloaded to a local Python environment where it can leverage all available CPU cores and RAM without browser constraints.
+• Command-Line Tool: The cartographer_v2.py script is a command-line tool designed for offline analysis. It is run from the terminal and accepts a list of one or more .jsonl data chunks as arguments.
+• Data Aggregation: The script loads and combines all provided .jsonl file chunks into a single, large pandas DataFrame.
+• Heavy Processing: It performs computationally intensive tasks, such as Principal Component Analysis (PCA), on the complete, multi-gigabyte dataset.
+• Static HTML Output: After the analysis is complete, the script outputs the interactive 2D and 3D fitness landscapes as static .html files, which can then be opened and explored in any browser without requiring a live server or backend.
+
+12.E. The Survey Data & JSONL Format
+• Description: At the end of each generation, the GA worker emits the complete test results for every chromosome in that generation's population. This raw, comprehensive output is known as the "survey data."
+• JSONL (JSON Lines) Format: The survey data is formatted as .jsonl. In this format, every line in the file is its own complete, self-contained JSON object. Each object contains the full chromosome (all genes) and the corresponding detailed result object from the simulation, including the functional annotations from the "River of Flow" analysis.
+• Why JSONL? This format is highly scalable and ideal for big data processing. Standard JSON requires the entire file to be read into memory to be parsed, which is impossible for multi-gigabyte files. With JSONL, an analysis script can read and process the massive file one line (one chromosome result) at a time, keeping memory usage minimal.
+
+12.F. Directed Evolution Logic
+
+12.F.1. The "Bootstrap" Epoch: For the initial run where no map exists, the GA will execute a "standard non-directed evolution" epoch. This means the initial population of 800 workers is created from the initial unmodified ranges of variables, after which the GA immediately begins its normal fitness-maximization loop (selection, crossover, mutation) without any external guidance. It is always trying to find the highest fitness; it is simply "undirected" in this initial phase.
+
+12.F.2. The directives.json Structure & Logic: The Cartographer's role is to define where to look, and the GA worker's role is to perform the search. The Cartographer analyzes the landscape and translates a high-level concept (e.g., "explore this high-fitness plateau") into a concrete set of variable ranges for the core functional genes. It writes these ranges into the directives.json file, and the GA worker's only job is to create new individuals that conform to these constraints. This maintains a perfect separation of concerns. A directive will now look like this:
+[
+{
+"type": "explore_subspace",
+"name": "Explore_High_Fitness_Plateau",
+"population_share": 0.50,
+"search_space": {
+"boardAngle": { "min": 0.6, "max": 0.9 },
+"funnel_profile.width": { "min": 150, "max": 250 },
+"shakeAmplitude": { "min": 0, "max": 0.05 }
+}
+},
+{
+"type": "refine",
+"name": "Refine_Best_Cluster_Champion",
+"population_share": 0.25,
+"base_chromosome_id": 12345,
+"mutation_rate": 0.02,
+"mutation_magnitude": 0.5
+},
+{
+"type": "random_unconstrained",
+"name": "Maintain_Diversity",
+"population_share": 0.10
+},
+{
+"type": "no_jurisdiction",
+"name": "Cross_Pollinate",
+"population_share": 0.15
+}
+]
+
+12.F.3. Dynamic Thread Leadership: The base_chromosome_id specified in a "refine" directive serves only as the initial seed for that thread. For each subsequent generation within that epoch, the thread will operate as a dynamic mini-population. It will identify its own new "champion" (the best-performing individual within its own thread) and center the next generation's breeding around this new, updated local champion. This ensures that a "refine" thread is always climbing the most current peak of its cluster.
+
+12.F.4. Directed Population Construction: When the ga_worker receives these directives, it will partition its population according to the specified ratios and modes:
+◦ explore_subspace: This thread creates new individuals randomly, but with the constraint that their gene values must fall within the min and max ranges defined in the search_space object. This mode is NOT driven by the fitness equation; it is a pure, unbiased sampling of a targeted, high-potential subspace.
+◦ refine: This thread takes the local champion of its own sub-population and creates new individuals by applying small, targeted mutations. This mode IS driven by the fitness equation, as it is an exploitative, hill-climbing search focused on maximizing the fitness of its local champion.
+◦ random_unconstrained: This thread creates new individuals with no constraints, exactly like in the bootstrap epoch. Its breeding pool is its own sub-population from the previous generation. This mode IS driven by the fitness equation but within a diverse, unconstrained group, acting as a control and a source of novelty.
+◦ no_jurisdiction: This is a vital cross-pollination thread. Its breeding pool is composed of the elite individuals from all other threads combined. This ensures that successful traits discovered in a "refine" thread can be blended with traits from an "explore" thread, preventing the search from becoming too siloed and potentially leading to novel combinations. This mode IS driven by the fitness equation.
+
+12.F.5. Default Fallback: If the user clicks "Resume" without providing a directives.json file, the ga_worker will default to its standard non-directed evolution behavior, continuing its own "blind ascent" until it receives new orders.
+
+12.G. Conclusion
+Upon completion, the S35 Topological Cartographer will fundamentally change our approach to solving this problem. We will move from a reactive, brute-force optimization process to a proactive, intelligent search strategy. This system will not only allow us to find better solutions faster, but it will also provide a deep, quantitative understanding of the underlying physics and design trade-offs that govern performance. We will be able to answer not just "What is the best design?" but "What makes a design good, and what are the different families of good designs?"
