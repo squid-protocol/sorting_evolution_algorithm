@@ -1,42 +1,49 @@
-# LEGO Sorter Evolutionary Pipeline (S35)
+# Project S34: AI-Driven Mechanics for Small Parts Sorting
 
-This repository contains a fully functional, browser-based Genetic Algorithm (GA) and physics simulation pipeline designed to optimize physical sorting machinery. 
+## Overview
+Project S34 is a highly specialized Machine Learning and Simulation pipeline designed to procedurally generate, optimize, and validate physical sorting mechanisms for small, asymmetric parts. 
 
-The primary achievement of this project is its proven end-to-end pipeline: the system successfully takes randomized, chaotic "Plinko-style" board parameters and automatically evolves them into highly efficient, traditional "shaker" (zig-zag cascade) sorter designs through thousands of generations of physics-based natural selection.
+Whether sorting agricultural seeds by size, filtering manufacturing components for defects, or organizing consumer plastics (like Lego bricks), designing passive physical sorters (Plinko-style boards, funnels, and vibrating ramps) is traditionally a slow, manual CAD process. 
 
-## 🚀 Key Features
+Project S34 replaces manual iteration with a custom, human-in-the-loop Genetic Algorithm (GA) powered by a headless 2D physics engine (`matter.js`). It is capable of exploring a near-infinite mechanical solution space, mathematically mapping its own evolutionary strategies, and ruthlessly stress-testing its designs to output highly efficient, manufacturable physical geometries.
 
-* **Proven Evolutionary Pipeline:** Successfully transitions designs from random Plinko geometries to deterministic, high-throughput cascade shakers.
-* **Decentralized Multithreading:** Utilizes a Web Worker architecture. A central Coordinator (`ga_worker_S35.js`) manages the genetic population while dispatching headless Matter.js physics simulations to parallel Sub-Workers (`sub_worker_S35.js`).
-* **Time-Corrected Physics Engine:** Re-engineered Matter.js implementation that decouples simulation speed from hardware limits, allowing for thousands of physics steps to be processed in a fraction of a second without losing real-world accuracy.
-* **Nuanced Fitness Function:** A complex scoring system that doesn't just measure speed. It rewards throughput and piece-to-piece consistency while harshly penalizing jams, clumped exits, and physics violations.
-* **Topological Cartographer:** An offline Python analysis toolkit (`cartographer.py`) that uses Principal Component Analysis (PCA) to map the multi-dimensional fitness landscape of the generated designs.
+---
 
-## 🧠 How the Evolution Works
+## ⚠️ The Engineering Challenge: Chaotic Physics
+Standard optimization algorithms fail when applied to rigid-body physics engines. The physics of thousands of small parts colliding, wedging, and bouncing is inherently chaotic. A one-millimeter adjustment to a single peg can change a perfect, high-throughput funnel into a catastrophic jam. 
 
-The algorithm searches a massive solution space to find the optimal physical configuration for a sorting machine. 
+This creates a highly rugged "fitness landscape" where AI easily gets trapped in dead-ends (local optima) or over-optimizes for statistical flukes (a single lucky simulation run). 
 
-1.  **The Blueprint (Chromosome):** Each design is defined by "genes" controlling machine width, global board tilt (gravity modifier), shake amplitude (vibration), batch release timing, and the specific coordinates and angles of internal cascading ramps.
-2.  **The Trial (Simulation):** Headless workers drop virtual LEGO pieces (with specific friction, restitution, and density) into the machine. 
-3.  **The Score (Fitness):** The system records every interaction. Designs that safely singulate pieces at a consistent rate score high. Designs that jam or drop clumps score low.
-4.  **The Next Generation:** The best designs are preserved (Elitism), bred together, and subjected to intelligent, physics-aware Gaussian mutations (e.g., preventing impossible overlapping geometry) to create the next generation.
+To solve this, Project S34 is built on a novel **three-pillar architecture** that tightly couples raw evolutionary computation with deep statistical analysis and human intuition.
 
-## 🛠️ System Architecture
+---
 
-* **`index_S35.html` & `main_S35.js`:** The primary UI/dashboard. Provides real-time telemetry, fitness breakdowns, and live visual rendering of the current "Champion" design.
-* **`simulation_config.js`:** The single source of truth for all physics rules, gravity, piece definitions, and spatial boundaries.
-* **`ga_worker_S35.js`:** The Genetic Algorithm coordinator. Handles breeding, mutation, and population management.
-* **`sub_worker_S35.js`:** The headless physics simulators that crunch the actual drop tests.
-* **`simulator_S35.html`:** A standalone debugging simulator for manually testing and tweaking specific JSON chromosomes.
-* **`cartographer.py`:** A Dash/Plotly Python app for analyzing `.jsonl` survey data dumps to visualize the PCA fitness landscape.
+## 🏛️ The S34 Architecture (The Triad)
 
-## 🚦 Getting Started
+This repository is divided into three distinct but deeply interconnected subsystems:
 
-### Running the Simulator & GA
-Because the project heavily utilizes Web Workers and ES6 modules, it must be served via a local web server (opening the HTML files directly via `file://` will trigger CORS errors).
+### 1. The Simulator: Evolutionary Generation (`/ga`)
+The core engine of S34. The GA generates thousands of unique machine layouts per minute, evaluating them headlessly across a multi-threaded Web Worker pool.
+* **Heterogeneous Genome:** Explores continuous variables (heights, angles, vibration frequencies) alongside latent, binary structural genes (dormant ramps and peg matrices that can be toggled on/off across generations).
+* **Multi-Objective Fitness:** AI is rewarded for high throughput and symmetrical distribution, but exponentially penalized for jams, simultaneous clump drops, and physics violations (overlapping geometries).
+* **Stagnation Breakers:** Employs dynamic mutation scaling and mass extinction events to force the algorithm out of evolutionary dead-ends.
 
-1. Clone the repository.
-2. Start a local server in the project directory:
-   ```bash
-   # Using Python 3
-   python -m http.server 8000
+### 2. The Cartographer: Dimensionality Reduction (`/ca`)
+The Genetic Algorithm explores a 60+ dimensional search space, making it a "black box." The Cartographer solves this by running Principal Component Analysis (PCA) on the GA's output logs.
+* **Landscape Mapping:** Compresses the 60+ machine variables into a 3D, human-readable coordinate system to show exactly *how* the AI is solving the problem.
+* **Human-in-the-Loop (HitL):** By viewing the interactive Cartographer dashboard, engineers can see which mathematical strategies yield the highest fitness. Humans can then update the GA parameters or issue live "Directives" to actively constrain the search space, supercharging the AI's ability to find optimal solutions.
+
+### 3. The Validator: Statistical Robustness (`/va`)
+Because chaotic physics engines occasionally produce "golden runs" (where a bad machine gets a high score purely by mathematical chance), the Validator acts as the final gatekeeper.
+* **Large-$N$ Monte Carlo Testing:** When the GA claims to have found a "Champion" geometry, the Validator isolates it and runs 50 to 100 identical simulations in parallel.
+* **Fluke Elimination:** By analyzing the median performance and standard deviation of these runs, the Validator proves whether the machine's success is due to brilliant mechanical design or just a statistical fluke. Only tight, highly reproducible bell curves pass validation.
+
+---
+
+## 🚀 Getting Started
+
+To run the full S34 pipeline, you will utilize the three subsystems in sequence:
+
+1. **Evolve:** Launch the GA (`/ga/index_S34.html`) to begin searching the solution space.
+2. **Map:** Feed the resulting `.jsonl` logs into the Cartographer (`python ca/cartographer.py data.jsonl`) to visualize the AI's strategies and identify optimal parameters.
+3. **Validate:** Extract a champion seed from the GA and run it through the Validator (`/va/validator_S34.html`) to confirm its physical reliability.

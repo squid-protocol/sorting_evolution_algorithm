@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>S34 Standalone Simulator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #2c3e50; color: #ecf0f1; margin: 0; padding: 20px; display: flex; gap: 20px; height: calc(100vh - 40px); }
+        .main-container { display: flex; flex-direction: column; gap: 20px; flex-grow: 1; min-width: 450px; max-width: 600px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #3498db #2c3e50; }
+        .controls, .results, .settings { background: #34495e; padding: 20px; border-radius: 8px; }
+        h2, h3 { margin-top: 0; border-bottom: 1px solid #7f8c8d; padding-bottom: 10px; }
+        textarea { width: 100%; height: 150px; background: #2c3e50; color: white; border: 1px solid #7f8c8d; border-radius: 4px; padding: 10px; box-sizing: border-box; font-family: monospace; }
+        button { padding: 12px 20px; font-size: 16px; cursor: pointer; background-color: #3498db; color: white; border: none; border-radius: 5px; transition: background-color 0.2s; margin-top: 10px; }
+        button:hover { background-color: #2980b9; }
+        button:disabled { background-color: #555; cursor: not-allowed; }
+        select { width: 100%; padding: 10px; background: #2c3e50; color: white; border: 1px solid #7f8c8d; border-radius: 4px; margin-top: 10px; }
+        .button-group { display: flex; gap: 10px; }
+        #simulation-container { min-width: 1000px; height: 100%; background-color: #2c3e50; border-radius: 8px; overflow: hidden; }
+        #results-display { white-space: pre-wrap; font-family: monospace; background: #2c3e50; padding: 15px; border-radius: 4px; border: 1px solid #7f8c8d; max-height: 350px; overflow-y: auto; }
+        .setting-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .setting-item label { flex-basis: 60%; font-size: 14px; }
+        .setting-item input { flex-basis: 40%; background: #2c3e50; border: 1px solid #7f8c8d; color: white; padding: 5px; border-radius: 4px; }
+        .charts-wrapper { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+        .chart-container { position: relative; height: 220px; width: 100%; }
+        .fitness-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 15px;}
+        .fitness-table th, .fitness-table td { padding: 6px; text-align: left; border-bottom: 1px solid #444; }
+        .fitness-table th { color: #bdc3c7; font-weight: 600; }
+        .fitness-table td { color: #ecf0f1; }
+        .fitness-table td:nth-child(2), .fitness-table td:nth-child(3), .fitness-table td:nth-child(4) { text-align: right; font-family: monospace; }
+        .impact-positive { color: #2ecc71 !important; font-weight: bold; }
+        .impact-negative { color: #e74c3c !important; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="simulation-container"></div>
+    <div class="main-container">
+        <div class="controls">
+            <h2>S34 Chromosome Loader</h2>
+            <p>Load a single chromosome by pasting JSON below, or load a full history file to browse designs.</p>
+            <textarea id="chromosome-input" placeholder="Paste S34 chromosome JSON here..."></textarea>
+            <div id="history-controls" style="display: none;">
+                <label for="design-selector">Select Design (by Generation):</label>
+                <select id="design-selector"></select>
+            </div>
+            <div class="button-group">
+                <button id="load-paste-button">Load from Paste</button>
+                <button id="load-file-button">Load History File</button>
+                <input type="file" id="file-input" accept=".json" style="display: none;" />
+            </div>
+        </div>
+        <div class="settings">
+            <h3>Simulation Settings</h3>
+            <div id="settings-dashboard">
+                <p>Load a chromosome to see its settings.</p>
+            </div>
+        </div>
+        <div class="results">
+            <h3>Simulation Controls & Results</h3>
+            <div class="button-group">
+                <button id="run-button" disabled>Run Full Simulation</button>
+                <button id="stop-button" disabled>End Simulation & Calculate</button>
+            </div>
+            <pre id="results-display">Load a chromosome to begin.</pre>
+            <div id="fitness-breakdown-container"></div>
+            <div class="charts-wrapper">
+                <div class="chart-container">
+                    <h3>Exit Clump Histogram</h3>
+                    <canvas id="clumpHistogram"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>Timing Interval Histogram</h3>
+                    <canvas id="timingHistogram"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import(`../simulation_config.js?run=${new Date().getTime()}`)
+            .then(configModule => {
+                for (const key in configModule) {
+                    window[key] = configModule[key];
+                }
+                initializeApp();
+            })
+            .catch(error => {
+                console.error("CRITICAL ERROR: Failed to load simulation_config.js", error);
+                document.body.innerHTML = `<h1>Failed to load critical configuration file. Check the console for details.</h1>`;
+            });
+
+        function initializeApp() {
+            class Visualizer {
+                constructor(containerElement) {
+                    this.Matter = Matter;
+                    const { Engine, Render, Runner, World, Composite, Bodies } = this.Matter;
+
+                    this.engine = Engine.create(window.ENGINE_CONFIG);
+                    this.world = this.engine.world;
+                    this.render = Render.create({
+                        element: containerElement,
+                        engine: this.engine,
+                        options: { 
+                            width: containerElement.clientWidth, 
+                            height: containerElement.clientHeight, 
+                            wireframes: false, 
+                            background: '#2c3e50' 
+                        }
+                    });
+                    this.runner = Runner.create();
+                    Render.run(this.render);
+                    Runner.run(this.runner, this.engine);
+                    Render.lookAt(this.render, { 
+                        min: { x: 0, y: 0 }, 
+                        max: { x: window.SIM_CONFIG.BOARD_WIDTH, y: window.SIM_CONFIG.BOARD_HEIGHT } 
+                    });
+                }
+
+                drawStaticBoard(chromosome) {
+                    if (!chromosome) return;
+                    const { World, Composite, Bodies } = this.Matter;
+
+                    Composite.clear(this.world, false);
+                    const bodiesToRemove = Composite.allBodies(this.world).filter(body => body.isStatic);
+                    Composite.remove(this.world, bodiesToRemove);
+
+                    const boardBodies = this.createBoardFromChromosome(chromosome);
+                    World.add(this.world, boardBodies);
+
+                    const main_sensor_y = chromosome.machineHeight;
+                    const lost_sensor_y = main_sensor_y + 100;
+                    const sensor_padding = window.SENSOR_CONFIG.SENSOR_WIDTH / 2;
+                    const main_sensor_x_center = (window.SIM_CONFIG.BOARD_WIDTH / 2) + chromosome.detectorOffset;
+                    const main_sensor_start = main_sensor_x_center - (window.SENSOR_CONFIG.SENSOR_WIDTH / 2);
+                    const main_sensor_end = main_sensor_x_center + (window.SENSOR_CONFIG.SENSOR_WIDTH / 2);
+
+                    const mainSensor = Bodies.rectangle(main_sensor_x_center, main_sensor_y, window.SENSOR_CONFIG.SENSOR_WIDTH, 10, { label: 'sensor_main', isStatic: true, isSensor: true, render: { fillStyle: 'rgba(144, 238, 144, 0.5)' } });
+                    const left_lost_width = main_sensor_start - sensor_padding;
+                    const left_lost_x = left_lost_width / 2;
+                    const leftLostSensor = Bodies.rectangle(left_lost_x, lost_sensor_y, left_lost_width, 10, { label: 'sensor_lost', isStatic: true, isSensor: true, render: { fillStyle: 'rgba(255, 255, 0, 0.3)' } });
+                    const right_lost_start = main_sensor_end + sensor_padding;
+                    const right_lost_width = window.SIM_CONFIG.BOARD_WIDTH - right_lost_start;
+                    const right_lost_x = right_lost_start + (right_lost_width / 2);
+                    const rightLostSensor = Bodies.rectangle(right_lost_x, lost_sensor_y, right_lost_width, 10, { label: 'sensor_lost', isStatic: true, isSensor: true, render: { fillStyle: 'rgba(255, 255, 0, 0.3)' } });
+
+                    World.add(this.world, [mainSensor, leftLostSensor, rightLostSensor]);
+                }
+
+                createBoardFromChromosome(chromosome) {
+                    const allBodies = [];
+                    const wallThickness = window.SIM_CONFIG.INTERNAL_WALL_THICKNESS || 8;
+                    allBodies.push(...this.createWallsFromFunctionalProfile(chromosome, wallThickness));
+                    if (chromosome.complexRamps) {
+                        chromosome.complexRamps.forEach(rampGene => {
+                            if (rampGene.isActive) {
+                                allBodies.push(...this.createComplexRampWithPegs(rampGene, wallThickness));
+                            }
+                        });
+                    }
+                    if (chromosome.pegMatrices) {
+                        chromosome.pegMatrices.forEach(matrix => {
+                            if (matrix.isActive) {
+                                allBodies.push(...this.createPegsFromMatrix(matrix));
+                            }
+                        });
+                    }
+                    return allBodies;
+                }
+
+                createWallsFromFunctionalProfile(chromosome, thickness) {
+                    const { funnel_profile, machineHeight, detectorOffset } = chromosome;
+                    if (!funnel_profile) return [];
+                    const verticesL = [];
+                    const verticesR = [];
+                    const topY = 50;
+                    funnel_profile.forEach((slice, i) => {
+                        const t = i / (funnel_profile.length - 1);
+                        const y = topY + t * (machineHeight - topY);
+                        const centerX = (window.SIM_CONFIG.BOARD_WIDTH / 2) + slice.offset;
+                        verticesL.push({ x: centerX - slice.width / 2, y });
+                        verticesR.push({ x: centerX + slice.width / 2, y });
+                    });
+                    const sensorCenterX = (window.SIM_CONFIG.BOARD_WIDTH / 2) + detectorOffset;
+                    verticesL[verticesL.length - 1] = { x: sensorCenterX - window.SENSOR_CONFIG.SENSOR_WIDTH / 2, y: machineHeight };
+                    verticesR[verticesR.length - 1] = { x: sensorCenterX + window.SENSOR_CONFIG.SENSOR_WIDTH / 2, y: machineHeight };
+                    const leftWall = this.createConnectedWallFromVertices(verticesL, thickness);
+                    const rightWall = this.createConnectedWallFromVertices(verticesR, thickness);
+                    return [...leftWall, ...rightWall];
+                }
+                
+                createPegsFromMatrix(matrix) {
+                    const { Bodies, Vector } = this.Matter;
+                    const newPegs = [];
+                    if (!matrix.gridX || !matrix.gridY) return [];
+                    const { gridX, gridY, startSpacingX, endSpacingX, spacingY, rotation, staggerOffset, x, y } = matrix;
+                    const pegRadius = 4;
+                    let localPositions = [];
+                    let totalWidth = 0;
+                    for (let r = 0; r < gridY; r++) {
+                        let currentX = r * staggerOffset;
+                        for (let c = 0; c < gridX; c++) {
+                            localPositions.push(Vector.create(currentX, r * spacingY));
+                            const t = (gridX > 1) ? c / (gridX - 1) : 0;
+                            currentX += startSpacingX + t * (endSpacingX - startSpacingX);
+                        }
+                        if (currentX > totalWidth) totalWidth = currentX;
+                    }
+                    const totalHeight = (gridY - 1) * spacingY;
+                    const centerOffset = Vector.create(totalWidth / 2, totalHeight / 2);
+                    localPositions.forEach(pos => {
+                        const finalPos = Vector.add(Vector.rotate(Vector.sub(pos, centerOffset), rotation), {x, y});
+                        const peg = Bodies.circle(finalPos.x, finalPos.y, pegRadius, { label: 'board_element', isStatic: true, restitution: 0.5, render: { fillStyle: '#ecf0f1' } });
+                        newPegs.push(peg);
+                    });
+                    return newPegs;
+                }
+                createComplexRampWithPegs(rampGene, thickness) {
+                    const { Bodies, Vector } = this.Matter;
+                    const rampBodies = [];
+                    const pegRadius = 4;
+                    const ramp = Bodies.rectangle(rampGene.x, rampGene.y, rampGene.length, thickness, { label: 'board_element', isStatic: true, angle: rampGene.rotation });
+                    rampBodies.push(ramp);
+                    const center = Vector.create(rampGene.x, rampGene.y), axis = Vector.rotate(Vector.create(1, 0), rampGene.rotation);
+                    const halfLength = rampGene.length / 2;
+                    const v1 = Vector.add(center, Vector.mult(axis, -halfLength)), v2 = Vector.add(center, Vector.mult(axis, halfLength));
+                    const p1Offset = Vector.rotate(Vector.create(rampGene.peg1.radius, 0), rampGene.peg1.angle), p1Pos = Vector.add(v1, p1Offset);
+                    rampBodies.push(Bodies.circle(p1Pos.x, p1Pos.y, pegRadius, { label: 'board_element', isStatic: true, restitution: 0.5 }));
+                    const p2Offset = Vector.rotate(Vector.create(rampGene.peg2.radius, 0), rampGene.peg2.angle), p2Pos = Vector.add(v2, p2Offset);
+                    rampBodies.push(Bodies.circle(p2Pos.x, p2Pos.y, pegRadius, { label: 'board_element', isStatic: true, restitution: 0.5 }));
+                    return rampBodies;
+                }
+                createConnectedWallFromVertices(vertices, thickness) {
+                    if (!vertices || vertices.length < 2) return [];
+                    const { Bodies } = this.Matter;
+                    const wallSegments = [];
+                    for (let i = 0; i < vertices.length - 1; i++) {
+                        const start = vertices[i], end = vertices[i+1];
+                        if (!start || !end) continue;
+                        const length = Math.hypot(end.x - start.x, end.y - start.y);
+                        const angle = Math.atan2(end.y - start.y, end.x - start.x);
+                        const centerX = (start.x + end.x) / 2, centerY = (start.y + end.y) / 2;
+                        wallSegments.push(Bodies.rectangle(centerX, centerY, length, thickness, { label: 'board_element', isStatic: true, angle: angle, render: { fillStyle: '#95a5a6' } }));
+                    }
+                    return wallSegments;
+                }
+            }
+            
+            class LiveSimulation {
+                constructor(chromosome, visualizer, onComplete) {
+                    this.chromosome = chromosome;
+                    this.visualizer = visualizer;
+                    this.onComplete = onComplete;
+                    this.engine = visualizer.engine;
+                    this.Matter = visualizer.Matter;
+                    this.isRunning = false;
+                    this.animationFrameId = null;
+                    this.timeStep = 1000 / 60;
+                    this.pieceLibrary = window.PIECE_LIBRARY.map(p => ({
+                        ...p,
+                        vertices: this.Matter.Vertices.fromPath(p.vertices)
+                    }));
+                }
+
+                start() {
+                    this.isRunning = true;
+                    this.visualizer.drawStaticBoard(this.chromosome);
+                    
+                    window.BOARD_ANGLE_CALC_FN(this.engine.world.gravity, this.chromosome.boardAngle);
+                    const baseGravity = { x: this.engine.world.gravity.x, y: this.engine.world.gravity.y };
+
+                    const { Bodies, Body, Composite } = this.Matter;
+
+                    this.exitedPieceIDs = new Set();
+                    this.exitTimes = [];
+                    this.exitClumps = [];
+                    this.simulationTime = 0;
+
+                    const numBatches = this.chromosome.numBatches || 1;
+                    const piecesPerBatch = Math.floor(this.chromosome.batchSize / numBatches);
+                    this.totalPieces = piecesPerBatch * numBatches;
+
+                    this.batches = Array.from({length: numBatches}, (_, i) => ({
+                        startTime: i * this.chromosome.dropDelayTime,
+                        hasStarted: false,
+                        piecesSpawned: 0,
+                        dropStartTime: 0
+                    }));
+                    
+                    const main_sensor_y = this.chromosome.machineHeight;
+                    const main_sensor_x_center = (window.SIM_CONFIG.BOARD_WIDTH / 2) + this.chromosome.detectorOffset;
+                    const main_sensor_start = main_sensor_x_center - (window.SENSOR_CONFIG.SENSOR_WIDTH / 2);
+                    const main_sensor_end = main_sensor_x_center + (window.SENSOR_CONFIG.SENSOR_WIDTH / 2);
+
+                    const gameLoop = () => {
+                        if (!this.isRunning) return;
+                        
+                        this.simulationTime += this.timeStep;
+
+                        this.batches.forEach(batch => {
+                            if (!batch.hasStarted && this.simulationTime >= batch.startTime) {
+                                batch.hasStarted = true;
+                                batch.dropStartTime = this.simulationTime;
+                            }
+
+                            if (batch.hasStarted && batch.piecesSpawned < piecesPerBatch) {
+                                const elapsedDropTime = this.simulationTime - batch.dropStartTime;
+                                const dropDuration = this.chromosome.batchDropDuration || 1;
+                                const dropProgress = Math.min(1, elapsedDropTime / dropDuration);
+                                const easedProgress = 0.5 * (1 - Math.cos(dropProgress * Math.PI));
+                                const expectedSpawns = Math.floor(easedProgress * piecesPerBatch);
+                                const newSpawns = Math.min(piecesPerBatch, expectedSpawns) - batch.piecesSpawned;
+
+                                if (newSpawns > 0) {
+                                    for (let i = 0; i < newSpawns; i++) {
+                                        const shapeDef = this.pieceLibrary[Math.floor(Math.random() * this.pieceLibrary.length)];
+                                        const spawnX = this.chromosome.conveyorDropX + (Math.random() - 0.5) * this.chromosome.conveyorDropWidth;
+                                        const piece = Bodies.fromVertices(spawnX, 10, [shapeDef.vertices], { ...window.PIECE_PHYSICS_PROPERTIES, label: 'lego', render: { fillStyle: '#f1c40f' } });
+                                        Body.setVelocity(piece, { x: 0, y: this.engine.world.gravity.y * ((this.chromosome.freeFallTime || 0) / this.timeStep) });
+                                        Composite.add(this.engine.world, piece);
+                                    }
+                                    batch.piecesSpawned += newSpawns;
+                                }
+                            }
+                        });
+
+                        const { shakeAmplitude, shakeTimeOn, shakeTimeOff } = this.chromosome;
+                        let shakeX = 0;
+                        if (shakeAmplitude > 0 && (shakeTimeOn + shakeTimeOff) > 0) {
+                            if (this.simulationTime % (shakeTimeOn + shakeTimeOff) < shakeTimeOn) {
+                                shakeX += (Math.random() - 0.5) * shakeAmplitude;
+                            }
+                        }
+                        this.engine.world.gravity.x = baseGravity.x + shakeX;
+
+                        let currentFrameExits = 0;
+                        const piecesToRemove = [];
+                        const piecesInWorld = Composite.allBodies(this.engine.world).filter(b => b.label === 'lego');
+
+                        for (const body of piecesInWorld) {
+                            if (body.position.y > main_sensor_y && body.position.x >= main_sensor_start && body.position.x <= main_sensor_end) {
+                                if (!this.exitedPieceIDs.has(body.id)) {
+                                    this.exitedPieceIDs.add(body.id);
+                                    this.exitTimes.push(this.simulationTime);
+                                    currentFrameExits++;
+                                }
+                                piecesToRemove.push(body);
+                            }
+                        }
+
+                        if (currentFrameExits > 0) this.exitClumps.push(currentFrameExits);
+                        if (piecesToRemove.length > 0) Composite.remove(this.engine.world, piecesToRemove);
+
+                        if (this.exitedPieceIDs.size >= this.totalPieces) {
+                            this.stop();
+                            this.calculateAndShowResults("Completed");
+                            return;
+                        }
+                        if (this.simulationTime > window.MAX_SIM_TIME) {
+                            this.stop();
+                            this.calculateAndShowResults("Timeout");
+                            return;
+                        }
+
+                        this.animationFrameId = requestAnimationFrame(gameLoop);
+                    };
+
+                    this.animationFrameId = requestAnimationFrame(gameLoop);
+                }
+
+                stop() {
+                    this.isRunning = false;
+                    if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+                }
+
+                calculateAndShowResults(exitReason) {
+                    let throughputScore = this.exitedPieceIDs.size;
+                    const intervals = [];
+                    if (this.exitTimes.length > 1) {
+                        const sortedTimes = [...this.exitTimes].sort((a,b) => a - b);
+                        for (let i = 1; i < sortedTimes.length; i++) {
+                            intervals.push(sortedTimes[i] - sortedTimes[i-1]);
+                        }
+                    }
+                    const clumpHistogram = {};
+                    this.exitClumps.forEach(c => { clumpHistogram[c] = (clumpHistogram[c] || 0) + 1; });
+                    
+                    let textReport = `SIMULATION RESULTS\n------------------\nExit Reason: ${exitReason}\nThroughput: ${throughputScore} / ${this.totalPieces}`;
+                    const results = { textReport, clumpHistogram, intervals };
+                    this.onComplete(results);
+                }
+            }
+
+            const loadPasteButton = document.getElementById('load-paste-button');
+            const loadFileButton = document.getElementById('load-file-button');
+            const fileInput = document.getElementById('file-input');
+            const runButton = document.getElementById('run-button');
+            const stopButton = document.getElementById('stop-button');
+            const chromosomeInput = document.getElementById('chromosome-input');
+            const resultsDisplay = document.getElementById('results-display');
+            const settingsDashboard = document.getElementById('settings-dashboard');
+            const historyControls = document.getElementById('history-controls');
+            const designSelector = document.getElementById('design-selector');
+            const clumpHistogramCanvas = document.getElementById('clumpHistogram');
+            const timingHistogramCanvas = document.getElementById('timingHistogram');
+            const fitnessBreakdownContainer = document.getElementById('fitness-breakdown-container');
+
+            let currentChromosome = null;
+            let loadedHistory = [];
+            const visualizer = new Visualizer(document.getElementById('simulation-container'));
+            let liveSim = null;
+            let clumpChart = null;
+            let timingChart = null;
+
+            const processChromosome = (chromosome) => {
+                if (!chromosome || !chromosome.funnel_profile) {
+                    throw new Error("Invalid S34 chromosome structure. Missing 'funnel_profile'.");
+                }
+                currentChromosome = chromosome;
+                chromosomeInput.value = JSON.stringify(currentChromosome, null, 2);
+                visualizer.drawStaticBoard(currentChromosome);
+                populateSettings(currentChromosome);
+                runButton.disabled = false;
+                resultsDisplay.textContent = "Chromosome loaded. Adjust settings or run simulation.";
+                fitnessBreakdownContainer.innerHTML = ''; // Clear old breakdown
+            };
+
+            loadPasteButton.addEventListener('click', () => {
+                try {
+                    const pastedChromosome = JSON.parse(chromosomeInput.value);
+                    historyControls.style.display = 'none';
+                    loadedHistory = [];
+                    processChromosome(pastedChromosome);
+                } catch (e) {
+                    alert("Error parsing chromosome JSON: " + e.message);
+                    runButton.disabled = true;
+                }
+            });
+
+            loadFileButton.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const history = JSON.parse(ev.target.result);
+                        if (Array.isArray(history) && history.length > 0) {
+                            loadedHistory = history;
+                            designSelector.innerHTML = '';
+                            history.forEach((chromo, index) => {
+                                const generation = chromo.id || `Design ${index + 1}`;
+                                const fitness = chromo.fitness ? chromo.fitness.toFixed(2) : 'N/A';
+                                const option = new Option(`Gen ${generation} (Fitness: ${fitness})`, index);
+                                designSelector.appendChild(option);
+                            });
+                            historyControls.style.display = 'block';
+                            designSelector.value = history.length - 1;
+                            processChromosome(history[history.length - 1]);
+                        } else { alert("Invalid or empty history file."); }
+                    } catch (error) { alert("Error parsing JSON file: " + error.message); }
+                };
+                reader.readAsText(file);
+                fileInput.value = '';
+            });
+
+            designSelector.addEventListener('change', () => {
+                const selectedIndex = parseInt(designSelector.value);
+                if (loadedHistory[selectedIndex]) {
+                    processChromosome(loadedHistory[selectedIndex]);
+                }
+            });
+            
+            runButton.addEventListener('click', () => {
+                if (!currentChromosome) return;
+                if (liveSim) liveSim.stop();
+
+                liveSim = new LiveSimulation(getSettingsFromUI(), visualizer, (results) => {
+                    resultsDisplay.textContent = results.textReport;
+                    updateClumpHistogram(results.clumpHistogram);
+                    updateTimingHistogram(results.intervals);
+                    updateFitnessBreakdown(results.fullResults);
+                    runButton.disabled = false;
+                    stopButton.disabled = true;
+                });
+
+                runButton.disabled = true;
+                stopButton.disabled = false;
+                resultsDisplay.textContent = "Simulation running...";
+                liveSim.start();
+            });
+
+            stopButton.addEventListener('click', () => {
+                if(liveSim) {
+                    liveSim.stop();
+                    liveSim.calculateAndShowResults("Stopped by user");
+                    // Reset the world for the next run
+                    const { Composite } = Matter;
+                    const piecesInWorld = Composite.allBodies(visualizer.engine.world).filter(b => b.label === 'lego');
+                    Composite.remove(visualizer.engine.world, piecesInWorld);
+                }
+            });
+
+            function populateSettings(chromosome) {
+                settingsDashboard.innerHTML = `
+                    <div class="setting-item"><label>Board Angle (rad)</label><input type="number" step="0.1" id="setting-boardAngle" value="${chromosome.boardAngle ?? 0}"></div>
+                    <div class="setting-item"><label>Machine Height</label><input type="number" id="setting-machineHeight" value="${chromosome.machineHeight ?? 1200}"></div>
+                    <div class="setting-item"><label>Detector Offset</label><input type="number" id="setting-detectorOffset" value="${chromosome.detectorOffset ?? 0}"></div>
+                    <hr>
+                    <div class="setting-item"><label>Batch Size</label><input type="number" id="setting-batchSize" value="${chromosome.batchSize ?? 500}"></div>
+                    <div class="setting-item"><label>Num Batches</label><input type="number" id="setting-numBatches" value="${chromosome.numBatches ?? 1}"></div>
+                    <div class="setting-item"><label>Drop Delay (ms)</label><input type="number" id="setting-dropDelayTime" value="${chromosome.dropDelayTime ?? 0}"></div>
+                    <div class="setting-item"><label>Batch Drop Duration (ms)</label><input type="number" id="setting-batchDropDuration" value="${chromosome.batchDropDuration ?? 1000}"></div>
+                    <div class="setting-item"><label>Free Fall Time (ms)</label><input type="number" id="setting-freeFallTime" value="${chromosome.freeFallTime ?? 200}"></div>
+                    <hr>
+                    <div class="setting-item"><label>Shake Amp</label><input type="number" step="0.01" id="setting-shakeAmplitude" value="${chromosome.shakeAmplitude ?? 0}"></div>
+                    <div class="setting-item"><label>Shake On (ms)</label><input type="number" id="setting-shakeTimeOn" value="${chromosome.shakeTimeOn ?? 0}"></div>
+                    <div class="setting-item"><label>Shake Off (ms)</label><input type="number" id="setting-shakeTimeOff" value="${chromosome.shakeTimeOff ?? 0}"></div>
+                `;
+            }
+            
+            function getSettingsFromUI() {
+                const modifiedChromosome = JSON.parse(JSON.stringify(currentChromosome));
+                modifiedChromosome.boardAngle = parseFloat(document.getElementById('setting-boardAngle').value);
+                modifiedChromosome.machineHeight = parseInt(document.getElementById('setting-machineHeight').value);
+                modifiedChromosome.detectorOffset = parseInt(document.getElementById('setting-detectorOffset').value);
+                modifiedChromosome.batchSize = parseInt(document.getElementById('setting-batchSize').value);
+                modifiedChromosome.numBatches = parseInt(document.getElementById('setting-numBatches').value);
+                modifiedChromosome.dropDelayTime = parseInt(document.getElementById('setting-dropDelayTime').value);
+                modifiedChromosome.batchDropDuration = parseInt(document.getElementById('setting-batchDropDuration').value);
+                modifiedChromosome.freeFallTime = parseInt(document.getElementById('setting-freeFallTime').value);
+                modifiedChromosome.shakeAmplitude = parseFloat(document.getElementById('setting-shakeAmplitude').value);
+                modifiedChromosome.shakeTimeOn = parseInt(document.getElementById('setting-shakeTimeOn').value);
+                modifiedChromosome.shakeTimeOff = parseInt(document.getElementById('setting-shakeTimeOff').value);
+                return modifiedChromosome;
+            }
+
+            function updateClumpHistogram(clumpData) {
+                if (!clumpData || !clumpHistogramCanvas) return;
+                const labels = Object.keys(clumpData).sort((a, b) => parseInt(a) - parseInt(b));
+                const data = labels.map(label => clumpData[label]);
+                if (clumpChart) {
+                    clumpChart.data.labels = labels;
+                    clumpChart.data.datasets[0].data = data;
+                    clumpChart.update();
+                } else {
+                    clumpChart = new Chart(clumpHistogramCanvas.getContext('2d'), { type: 'bar', data: { labels, datasets: [{ label: 'Clump Count', data, backgroundColor: 'rgba(52, 152, 219, 0.5)' }] } });
+                }
+            }
+
+            function updateTimingHistogram(intervals) {
+                 if (!intervals || !timingHistogramCanvas) return;
+                const binSize = 50, maxTime = 2000, binCount = Math.ceil(maxTime / binSize);
+                const bins = new Array(binCount).fill(0);
+                const labels = Array.from({length: binCount}, (_, i) => `${i * binSize}`);
+                intervals.forEach(interval => { if (interval < maxTime) bins[Math.floor(interval / binSize)]++; });
+                if (timingChart) {
+                    timingChart.data.labels = labels;
+                    timingChart.data.datasets[0].data = bins;
+                    timingChart.update();
+                } else {
+                    timingChart = new Chart(timingHistogramCanvas.getContext('2d'), { type: 'bar', data: { labels, datasets: [{ label: 'Interval Count', data: bins, backgroundColor: 'rgba(46, 204, 113, 0.5)' }] } });
+                }
+            }
+
+            function updateFitnessBreakdown(result) {
+                // This function will be added in the final implementation.
+                fitnessBreakdownContainer.innerHTML = `<h3>Fitness Breakdown (Coming Soon)</h3><p>Final Score: ${result.finalScore.toFixed(2)}</p>`;
+            }
+            
+            // This is the main entry point for the application logic.
+            // It's wrapped in a DOMContentLoaded listener to ensure the page is fully loaded.
+            document.addEventListener('DOMContentLoaded', initializeApp);
+        }
+    </script>
+</body>
+</html>

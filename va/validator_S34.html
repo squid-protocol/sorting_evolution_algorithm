@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S34 Design Validator</title>
+    <link rel="stylesheet" href="validator_style_S34.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body>
+    <div id="simulation-container"></div>
+    <div class="ui-container">
+        <div class="controls">
+            <h3>Design Validator (S34)</h3>
+            <button id="validateButton">Load & Validate Design</button>
+            <button id="replayButton" disabled>Replay First Run</button>
+            <button id="snapshotButton" disabled>Generate Snapshots</button>
+            <!-- New Save Button Added -->
+            <button id="saveDesignButton" disabled>Save Current Design</button>
+            <input type="file" id="seedFileInput" accept=".json" style="display: none;" />
+        </div>
+        <div class="ga-status" id="gaStatus">
+            <h3>Validation Status</h3>
+            <p>Run Count: <span id="runCount">0</span> / <span id="totalRuns">80</span></p>
+            <p>Status: <span id="gaStatusText">Idle. Please load a design.</span></p>
+        </div>
+        <div class="details-grid">
+            <div class="score-board" id="scoreBoard">
+                <h3>Last Run Details</h3>
+                <p>Score: <span id="lastScore">N/A</span></p>
+                <p>Throughput: <span id="throughputScore">N/A</span></p>
+                <p>Jam Penalty: <span id="jamPenalty">N/A</span></p>
+                <p>Simultaneous Penalty: <span id="simultaneousPenalty">N/A</span></p>
+                <p>Consistency Ratio: <span id="consistencyRewardRatio">N/A</span></p>
+            </div>
+            <div class="score-board" id="operationalParams">
+                <h3>Design Parameters</h3>
+                <p>Board Angle: <span id="paramBoardAngle">N/A</span></p>
+                <p>Detector Offset: <span id="paramDetectorOffset">N/A</span></p>
+                <p>Batch Size: <span id="paramBatchSize">N/A</span></p>
+                <p>Num Batches: <span id="paramNumBatches">N/A</span></p>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script type="module" src="validator_main_S34.js"></script>
+</body>
+</html>

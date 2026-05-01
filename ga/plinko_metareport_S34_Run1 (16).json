@@ -1,0 +1,805 @@
+[
+  {
+    "generation": 0,
+    "run": 1,
+    "duration": "227412",
+    "bestFitness": -1830,
+    "meanFitness": -514763.46783452376,
+    "stdDev": 853983.9259613355,
+    "top20MeanFitness": -4356.977272726876,
+    "earlyExitCounts": {
+      "Stagnation": 117,
+      "StuckPiece": 2,
+      "Completed": 1
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 0,
+      "jamPenalty": 346,
+      "simultaneousPenalty": 0,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0
+    }
+  },
+  {
+    "generation": 1,
+    "run": 1,
+    "duration": "134227",
+    "bestFitness": -1830,
+    "meanFitness": -228143.5164616051,
+    "stdDev": 477032.39380773006,
+    "top20MeanFitness": -2694.227272726876,
+    "earlyExitCounts": {
+      "Stagnation": 119,
+      "StuckPiece": 1
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 0,
+      "jamPenalty": 346,
+      "simultaneousPenalty": 0,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0
+    }
+  },
+  {
+    "generation": 2,
+    "run": 1,
+    "duration": "37321",
+    "bestFitness": -1511.666666665432,
+    "meanFitness": -66043.42934453303,
+    "stdDev": 203166.64787797752,
+    "top20MeanFitness": -2001.12821085164,
+    "earlyExitCounts": {
+      "Stagnation": 119,
+      "StuckPiece": 1
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 1,
+      "jamPenalty": 299,
+      "simultaneousPenalty": 0,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0
+    }
+  },
+  {
+    "generation": 3,
+    "run": 1,
+    "duration": "16033",
+    "bestFitness": 379246.5193940924,
+    "meanFitness": -37332.8754478274,
+    "stdDev": 231668.97662301402,
+    "top20MeanFitness": 34654.09398708721,
+    "earlyExitCounts": {
+      "Stagnation": 119,
+      "StuckPiece": 1
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 399,
+      "jamPenalty": 3,
+      "simultaneousPenalty": 45,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.38190954773869346
+    }
+  },
+  {
+    "generation": 4,
+    "run": 1,
+    "duration": "12672",
+    "bestFitness": 509615.8596863138,
+    "meanFitness": -10434.59867188244,
+    "stdDev": 87426.96977293446,
+    "top20MeanFitness": 48544.042835804175,
+    "earlyExitCounts": {
+      "Stagnation": 119,
+      "StuckPiece": 1
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 316,
+      "jamPenalty": 0,
+      "simultaneousPenalty": 44,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.45079365079365075
+    }
+  },
+  {
+    "generation": 5,
+    "run": 1,
+    "duration": "13177",
+    "bestFitness": 441161.29330033134,
+    "meanFitness": -11728.051935900467,
+    "stdDev": 78337.25166889669,
+    "top20MeanFitness": 57244.99607278599,
+    "earlyExitCounts": {
+      "Stagnation": 119,
+      "StuckPiece": 1
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 313,
+      "jamPenalty": 3,
+      "simultaneousPenalty": 52,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.41025641025641024
+    }
+  },
+  {
+    "generation": 6,
+    "run": 1,
+    "duration": "15889",
+    "bestFitness": 577989.9055554643,
+    "meanFitness": 9458.529334666757,
+    "stdDev": 114017.64214078346,
+    "top20MeanFitness": 171274.40974918095,
+    "earlyExitCounts": {
+      "Stagnation": 114,
+      "Completed": 4,
+      "StuckPiece": 2
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 300,
+      "jamPenalty": 0,
+      "simultaneousPenalty": 28,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.42809364548494977
+    }
+  },
+  {
+    "generation": 7,
+    "run": 1,
+    "duration": "15564",
+    "bestFitness": 517768.2879854108,
+    "meanFitness": 17693.28803641625,
+    "stdDev": 146260.80895215485,
+    "top20MeanFitness": 275460.2466011414,
+    "earlyExitCounts": {
+      "Stagnation": 114,
+      "Completed": 4,
+      "StuckPiece": 2
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 294,
+      "jamPenalty": 6,
+      "simultaneousPenalty": 28,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.42320819112627994
+    }
+  },
+  {
+    "generation": 8,
+    "run": 1,
+    "duration": "26366",
+    "bestFitness": 574295.852206698,
+    "meanFitness": -3350.942926964808,
+    "stdDev": 377383.9737048823,
+    "top20MeanFitness": 380053.51615613373,
+    "earlyExitCounts": {
+      "Stagnation": 109,
+      "Completed": 5,
+      "StuckPiece": 6
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 312,
+      "jamPenalty": 4,
+      "simultaneousPenalty": 4,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.4887459807073955
+    }
+  },
+  {
+    "generation": 9,
+    "run": 1,
+    "duration": "23211",
+    "bestFitness": 594971.7348324826,
+    "meanFitness": 55820.42104219421,
+    "stdDev": 191896.4384904563,
+    "top20MeanFitness": 428610.5188707102,
+    "earlyExitCounts": {
+      "Stagnation": 111,
+      "Completed": 5,
+      "StuckPiece": 4
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 314,
+      "jamPenalty": 2,
+      "simultaneousPenalty": 24,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.48562300319488816
+    }
+  },
+  {
+    "generation": 10,
+    "run": 1,
+    "duration": "29969",
+    "bestFitness": 599906.8349516926,
+    "meanFitness": 79839.46522888567,
+    "stdDev": 234104.7220383886,
+    "top20MeanFitness": 449898.7251111702,
+    "earlyExitCounts": {
+      "Stagnation": 110,
+      "Completed": 7,
+      "StuckPiece": 3
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 315,
+      "jamPenalty": 1,
+      "simultaneousPenalty": 8,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.4713375796178344
+    }
+  },
+  {
+    "generation": 11,
+    "run": 1,
+    "duration": "26525",
+    "bestFitness": 595820.7571436423,
+    "meanFitness": 84215.46886588786,
+    "stdDev": 228963.5640638592,
+    "top20MeanFitness": 472181.54049320956,
+    "earlyExitCounts": {
+      "Stagnation": 115,
+      "Completed": 3,
+      "StuckPiece": 2
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 313,
+      "jamPenalty": 3,
+      "simultaneousPenalty": 16,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.47435897435897434
+    }
+  },
+  {
+    "generation": 12,
+    "run": 1,
+    "duration": "19822",
+    "bestFitness": 564005.6646788213,
+    "meanFitness": 97994.34769808216,
+    "stdDev": 261114.62474478944,
+    "top20MeanFitness": 476590.0906801436,
+    "earlyExitCounts": {
+      "Stagnation": 109,
+      "Completed": 8,
+      "StuckPiece": 3
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 304,
+      "jamPenalty": 12,
+      "simultaneousPenalty": 16,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.528052805280528
+    }
+  },
+  {
+    "generation": 13,
+    "run": 1,
+    "duration": "22753",
+    "bestFitness": 596011.8623341051,
+    "meanFitness": 117001.42471728133,
+    "stdDev": 239096.87957017,
+    "top20MeanFitness": 493374.72403094097,
+    "earlyExitCounts": {
+      "Stagnation": 111,
+      "Completed": 7,
+      "StuckPiece": 2
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 299,
+      "jamPenalty": 1,
+      "simultaneousPenalty": 28,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.4697986577181208
+    }
+  },
+  {
+    "generation": 14,
+    "run": 1,
+    "duration": "50742",
+    "bestFitness": 603653.3438132699,
+    "meanFitness": 72815.89433185454,
+    "stdDev": 391665.96221187606,
+    "top20MeanFitness": 513063.7580873409,
+    "earlyExitCounts": {
+      "Stagnation": 106,
+      "Completed": 12,
+      "StuckPiece": 2
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 300,
+      "jamPenalty": 0,
+      "simultaneousPenalty": 16,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.4816053511705686
+    }
+  },
+  {
+    "generation": 15,
+    "run": 1,
+    "duration": "26398",
+    "bestFitness": 591025.3976847231,
+    "meanFitness": 90885.65414658267,
+    "stdDev": 255299.1386095773,
+    "top20MeanFitness": 468035.66511384596,
+    "earlyExitCounts": {
+      "Stagnation": 107,
+      "Completed": 9,
+      "StuckPiece": 4
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 300,
+      "jamPenalty": 0,
+      "simultaneousPenalty": 12,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.47491638795986624
+    }
+  },
+  {
+    "generation": 16,
+    "run": 1,
+    "duration": "29966",
+    "bestFitness": 577797.0587094923,
+    "meanFitness": 168264.90611744236,
+    "stdDev": 253349.47300123292,
+    "top20MeanFitness": 527298.6884960092,
+    "earlyExitCounts": {
+      "Completed": 17,
+      "Stagnation": 101,
+      "StuckPiece": 2
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 300,
+      "jamPenalty": 0,
+      "simultaneousPenalty": 20,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.44147157190635444
+    }
+  },
+  {
+    "generation": 17,
+    "run": 1,
+    "duration": "34704",
+    "bestFitness": 573470.6061487725,
+    "meanFitness": 166571.3050655187,
+    "stdDev": 321520.9797143885,
+    "top20MeanFitness": 517257.65551806695,
+    "earlyExitCounts": {
+      "Stagnation": 107,
+      "Completed": 9,
+      "StuckPiece": 4
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 298,
+      "jamPenalty": 2,
+      "simultaneousPenalty": 16,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.5454545454545454
+    }
+  },
+  {
+    "generation": 18,
+    "run": 1,
+    "duration": "56383",
+    "bestFitness": 565012.07753317,
+    "meanFitness": 129481.82198713472,
+    "stdDev": 329534.5780097269,
+    "top20MeanFitness": 521980.6618808795,
+    "earlyExitCounts": {
+      "Stagnation": 105,
+      "Completed": 11,
+      "StuckPiece": 4
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 299,
+      "jamPenalty": 1,
+      "simultaneousPenalty": 24,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.4697986577181208
+    }
+  },
+  {
+    "generation": 19,
+    "run": 1,
+    "duration": "50979",
+    "bestFitness": 625522.9384874207,
+    "meanFitness": 219592.09276497643,
+    "stdDev": 265041.3383969022,
+    "top20MeanFitness": 537461.6602376404,
+    "earlyExitCounts": {
+      "Stagnation": 100,
+      "Completed": 17,
+      "StuckPiece": 3
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 300,
+      "jamPenalty": 0,
+      "simultaneousPenalty": 16,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.5150501672240803
+    }
+  },
+  {
+    "generation": 20,
+    "run": 1,
+    "duration": "42893",
+    "bestFitness": 608738.1112725805,
+    "meanFitness": 168001.7924586186,
+    "stdDev": 294347.61713185505,
+    "top20MeanFitness": 535491.6327072072,
+    "earlyExitCounts": {
+      "Stagnation": 103,
+      "Completed": 14,
+      "StuckPiece": 3
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 300,
+      "jamPenalty": 0,
+      "simultaneousPenalty": 8,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.49498327759197325
+    }
+  },
+  {
+    "generation": 21,
+    "run": 1,
+    "duration": "30298",
+    "bestFitness": 610218.0536840964,
+    "meanFitness": 176424.6253144487,
+    "stdDev": 276737.0202168875,
+    "top20MeanFitness": 552502.3798182842,
+    "earlyExitCounts": {
+      "Stagnation": 110,
+      "Completed": 8,
+      "StuckPiece": 2
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 300,
+      "jamPenalty": 0,
+      "simultaneousPenalty": 28,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.4682274247491639
+    }
+  },
+  {
+    "generation": 22,
+    "run": 1,
+    "duration": "29627",
+    "bestFitness": 580340.9606692953,
+    "meanFitness": 190650.21813068393,
+    "stdDev": 285081.2197031811,
+    "top20MeanFitness": 520841.69445465424,
+    "earlyExitCounts": {
+      "Stagnation": 103,
+      "Completed": 10,
+      "StuckPiece": 7
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 300,
+      "jamPenalty": 0,
+      "simultaneousPenalty": 41,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.4682274247491639
+    }
+  },
+  {
+    "generation": 23,
+    "run": 1,
+    "duration": "32707",
+    "bestFitness": 580851.1118845574,
+    "meanFitness": 229534.65873115216,
+    "stdDev": 257619.2331954681,
+    "top20MeanFitness": 533841.3074215777,
+    "earlyExitCounts": {
+      "Stagnation": 104,
+      "Completed": 14,
+      "StuckPiece": 2
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 299,
+      "jamPenalty": 1,
+      "simultaneousPenalty": 20,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.42281879194630867
+    }
+  },
+  {
+    "generation": 24,
+    "run": 1,
+    "duration": "37834",
+    "bestFitness": 576261.9860531313,
+    "meanFitness": 247160.14150769732,
+    "stdDev": 293564.5043075957,
+    "top20MeanFitness": 538884.802329501,
+    "earlyExitCounts": {
+      "Stagnation": 110,
+      "Completed": 7,
+      "StuckPiece": 3
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 298,
+      "jamPenalty": 2,
+      "simultaneousPenalty": 16,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.45791245791245794
+    }
+  },
+  {
+    "generation": 25,
+    "run": 1,
+    "duration": "33735",
+    "bestFitness": 616935.687236174,
+    "meanFitness": 241124.97559177072,
+    "stdDev": 263179.39887481765,
+    "top20MeanFitness": 546597.4275963635,
+    "earlyExitCounts": {
+      "Stagnation": 107,
+      "Completed": 12,
+      "StuckPiece": 1
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 299,
+      "jamPenalty": 1,
+      "simultaneousPenalty": 24,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.5369127516778524
+    }
+  },
+  {
+    "generation": 26,
+    "run": 1,
+    "duration": "44306",
+    "bestFitness": 637058.69303027,
+    "meanFitness": 223195.62413203093,
+    "stdDev": 756966.9661021746,
+    "top20MeanFitness": 565726.1526404361,
+    "earlyExitCounts": {
+      "Stagnation": 114,
+      "Completed": 5,
+      "StuckPiece": 1
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 300,
+      "jamPenalty": 0,
+      "simultaneousPenalty": 24,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.5083612040133779
+    }
+  },
+  {
+    "generation": 27,
+    "run": 1,
+    "duration": "38798",
+    "bestFitness": 630052.5384460035,
+    "meanFitness": 228605.98228327231,
+    "stdDev": 395315.77436700184,
+    "top20MeanFitness": 574390.7430050771,
+    "earlyExitCounts": {
+      "Stagnation": 105,
+      "Completed": 12,
+      "StuckPiece": 3
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 300,
+      "jamPenalty": 0,
+      "simultaneousPenalty": 4,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.5484949832775919
+    }
+  },
+  {
+    "generation": 28,
+    "run": 1,
+    "duration": "37649",
+    "bestFitness": 595367.6654885181,
+    "meanFitness": 278324.77856889035,
+    "stdDev": 242607.94933940718,
+    "top20MeanFitness": 541350.1125699404,
+    "earlyExitCounts": {
+      "Stagnation": 111,
+      "Completed": 7,
+      "StuckPiece": 2
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 297,
+      "jamPenalty": 3,
+      "simultaneousPenalty": 24,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.5878378378378378
+    }
+  },
+  {
+    "generation": 29,
+    "run": 1,
+    "duration": "40494",
+    "bestFitness": 584515.5283054431,
+    "meanFitness": 243347.44464462867,
+    "stdDev": 266865.19736954715,
+    "top20MeanFitness": 550804.8633385933,
+    "earlyExitCounts": {
+      "Stagnation": 112,
+      "Completed": 8
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 300,
+      "jamPenalty": 0,
+      "simultaneousPenalty": 20,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.4147157190635451
+    }
+  },
+  {
+    "generation": 30,
+    "run": 1,
+    "duration": "25087",
+    "bestFitness": 584528.9081299967,
+    "meanFitness": 247304.13710081062,
+    "stdDev": 285136.40970086306,
+    "top20MeanFitness": 550480.8155725843,
+    "earlyExitCounts": {
+      "Stagnation": 114,
+      "Completed": 5,
+      "StuckPiece": 1
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 299,
+      "jamPenalty": 1,
+      "simultaneousPenalty": 29,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.3825503355704698
+    }
+  },
+  {
+    "generation": 31,
+    "run": 1,
+    "duration": "46274",
+    "bestFitness": 581334.0487690493,
+    "meanFitness": 298033.746062423,
+    "stdDev": 350375.9327885972,
+    "top20MeanFitness": 549775.2988014604,
+    "earlyExitCounts": {
+      "Stagnation": 120
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 299,
+      "jamPenalty": 1,
+      "simultaneousPenalty": 16,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.3959731543624161
+    }
+  },
+  {
+    "generation": 32,
+    "run": 1,
+    "duration": "42820",
+    "bestFitness": 599984.7637472245,
+    "meanFitness": 312125.1794690481,
+    "stdDev": 271368.85489459534,
+    "top20MeanFitness": 568397.009526558,
+    "earlyExitCounts": {
+      "Stagnation": 110,
+      "Completed": 9,
+      "StuckPiece": 1
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 299,
+      "jamPenalty": 1,
+      "simultaneousPenalty": 24,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.47651006711409394
+    }
+  },
+  {
+    "generation": 33,
+    "run": 1,
+    "duration": "48271",
+    "bestFitness": 602029.2800727197,
+    "meanFitness": 356492.7264863612,
+    "stdDev": 226954.07105119227,
+    "top20MeanFitness": 564927.7572413923,
+    "earlyExitCounts": {
+      "Stagnation": 117,
+      "Completed": 3
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 300,
+      "jamPenalty": 0,
+      "simultaneousPenalty": 16,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.4347826086956521
+    }
+  },
+  {
+    "generation": 34,
+    "run": 1,
+    "duration": "49353",
+    "bestFitness": 586331.2085720169,
+    "meanFitness": 336011.8280980652,
+    "stdDev": 234609.8936238663,
+    "top20MeanFitness": 565778.709959933,
+    "earlyExitCounts": {
+      "Stagnation": 115,
+      "Completed": 4,
+      "StuckPiece": 1
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 300,
+      "jamPenalty": 0,
+      "simultaneousPenalty": 37,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.4882943143812709
+    }
+  },
+  {
+    "generation": 35,
+    "run": 1,
+    "duration": "77703",
+    "bestFitness": 610347.2223952541,
+    "meanFitness": 297967.551258609,
+    "stdDev": 415895.56614514644,
+    "top20MeanFitness": 573130.4038887765,
+    "earlyExitCounts": {
+      "Stagnation": 110,
+      "Completed": 10
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 300,
+      "jamPenalty": 0,
+      "simultaneousPenalty": 24,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.40802675585284276
+    }
+  },
+  {
+    "generation": 36,
+    "run": 1,
+    "duration": "46557",
+    "bestFitness": 591671.4525606881,
+    "meanFitness": 318016.70719204826,
+    "stdDev": 288845.4048786457,
+    "top20MeanFitness": 571670.9956282557,
+    "earlyExitCounts": {
+      "Stagnation": 117,
+      "Completed": 3
+    },
+    "mutationRate": 0.05,
+    "bestOfGenMetrics": {
+      "throughput": 299,
+      "jamPenalty": 1,
+      "simultaneousPenalty": 28,
+      "consistencyRewardRatio": 0,
+      "symmetryRewardRatio": 0.4563758389261745
+    }
+  }
+]

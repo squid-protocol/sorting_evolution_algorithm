@@ -1,0 +1,36 @@
+{
+  "id": 999999,
+  "machineHeight": 1200,
+  "detectorOffset": 0,
+  "boardAngle": 1.4,
+  "funnel_profile": [
+    { "y_position": 50, "width": 1100, "offset": 0 },
+    { "y_position": 200, "width": 950, "offset": 0 },
+    { "y_position": 350, "width": 800, "offset": 0 },
+    { "y_position": 500, "width": 650, "offset": 0 },
+    { "y_position": 650, "width": 500, "offset": 0 },
+    { "y_position": 800, "width": 350, "offset": 0 },
+    { "y_position": 950, "width": 200, "offset": 0 },
+    { "y_position": 1200, "width": 100, "offset": 0 }
+  ],
+  "complexRamps": [
+    { "isActive": false, "x": 600, "y": 600, "rotation": 0, "length": 50, "peg1": { "angle": 0, "radius": 0 }, "peg2": { "angle": 0, "radius": 0 } }
+  ],
+  "pegMatrices": [
+    { "isActive": false, "gridX": 2, "gridY": 2, "startSpacingX": 50, "endSpacingX": 50, "spacingY": 50, "rotation": 0, "staggerOffset": 0, "x": 600, "y": 600 }
+  ],
+  "batchSize": 250,
+  "numBatches": 2,
+  "dropDelayTime": 1500,
+  "batchDropDuration": 250,
+  "freeFallTime": 50,
+  "conveyorDropX": 600,
+  "conveyorDropWidth": 300,
+  "shakeAmplitude": 0,
+  "shakeTimeOn": 0,
+  "shakeTimeOff": 100,
+  "shakeAmplitude_harsh": 0,
+  "shakeTimeOn_harsh": 0,
+  "shakeTimeOff_harsh": 100,
+  "fitness": -Infinity
+}

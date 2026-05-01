@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>LEGO Plinko - GA Optimizer (S34 Melded)</title>
+  <link rel="stylesheet" href="style_S34.css">
+</head>
+<body>
+  <div id="simulation-container"></div>
+  <div class="ui-container">
+
+    <!-- S34/S33 Melded Controls (MODIFIED) -->
+    <div class="controls">
+      <h3>Evolution Controls</h3>
+      <button id="startGAButton">Start Evolution</button>
+      <button id="stopGAButton" disabled>Stop for Analysis</button>
+      <button id="startWithSeedButton">Load Seed & Start</button>
+      <button id="screenshotButton">Take Screenshot</button>
+    </div>
+
+    <!-- S34 Cartographer Controls (MODIFIED FOR DECOUPLED PIPELINE) -->
+    <div class="controls">
+        <h3>S34 Cartographer Workflow</h3>
+        <button id="resumeDirectivesButton" disabled>Resume with New Directives</button>
+        <!-- DECOUPLED PIPELINE MODIFICATION: Button text and functionality changed -->
+        <button id="downloadLogAndClearButton" disabled>Download Log & Clear <span id="surveyChunkCount">(0)</span></button>
+    </div>
+
+    <div class="info-box" id="heuristics-status">
+        <h3>Heuristics Status</h3>
+        <p>Wall Crossover Test <span id="led-wall-crossover" class="led led-off"></span></p>
+        <p>Pinch Point Test <span id="led-pinch-point" class="led led-off"></span></p>
+        <p>Sacrificial Piece Test <span id="led-sacrificial-piece" class="led led-off"></span></p>
+        <p>Jam Detection <span id="led-jam-detection" class="led led-off"></span></p>
+        <p>Large Clump Exit <span id="led-large-clump" class="led led-off"></span></p>
+        <p>Stagnation Exit <span id="led-stagnation" class="led led-off"></span></p>
+        <p>Physics Violation <span id="led-physics-violation" class="led led-off"></span></p>
+        <p>Timeout / Completion <span id="led-timeout-completion" class="led led-off"></span></p>
+    </div>
+
+    <!-- Ported from S33: Interactive Fitness Weight Controls -->
+    <div class="info-box" id="fitness-weights-controls">
+        <h3>Fitness Weights (Hyperparameters)</h3>
+        <div class="weight-section">
+            <h4>Core Rewards</h4>
+            <div class="weight-grid-three">
+                <div class="weight-input"><label for="w_tp_exp">W_TP (Exp)</label><input type="number" id="w_tp_exp" value="900000" step="10000"></div>
+                <div class="weight-input"><label for="w_tp_lin">W_TP (Lin)</label><input type="number" id="w_tp_lin" value="10000" step="500"></div>
+                <div class="weight-input"><label for="w_tc">W_TP (Count)</label><input type="number" id="w_tc" value="50" step="10"></div>
+                <div class="weight-input"><label for="w_con_exp">W_Consistency (Exp)</label><input type="number" id="w_con_exp" value="3000" step="10000"></div>
+                <div class="weight-input"><label for="w_con_lin">W_Consistency (Lin)</label><input type="number" id="w_con_lin" value="200" step="200"></div>
+                <div class="weight-input"><label for="w_sym_exp">W_Symmetry (Exp)</label><input type="number" id="w_sym_exp" value="2000" step="200"></div>
+                <div class="weight-input"><label for="w_sym_lin">W_Symmetry (Lin)</label><input type="number" id="w_sym_lin" value="500" step="50"></div>
+            </div>
+        </div>
+         <div class="weight-section">
+            <h4>Preferred Interval Rewards</h4>
+            <div class="weight-grid-three">
+                <div class="weight-input"><label for="w_pref_ratio_exp">W_Pref_Ratio (Exp)</label><input type="number" id="w_pref_ratio_exp" value="300000" step="10000"></div>
+                <div class="weight-input"><label for="w_pref_ratio_lin">W_Pref_Ratio (Lin)</label><input type="number" id="w_pref_ratio_lin" value="5000" step="100"></div>
+                <div class="weight-input"><label for="w_pref_count">W_Pref_Count</label><input type="number" id="w_pref_count" value="50" step="50"></div>
+
+            </div>
+        </div>
+        <div class="weight-section">
+            <h4>Core Penalties</h4>
+            <div class="weight-grid-three">
+                <div class="weight-input"><label for="w_j">W_Jam</label><input type="number" id="w_j" value="5" step="1"></div>
+                <div class="weight-input"><label for="w_s">W_Simultaneous</label><input type="number" id="w_s" value="500" step="50"></div>
+                <div class="weight-input"><label for="w_iqr">W_IQR</label><input type="number" id="w_iqr" value="10" step="1"></div>
+                <div class="weight-input"><label for="w_pv">W_Physics_Violation</label><input type="number" id="w_pv" value="10000" step="1000"></div>
+            </div>
+        </div>
+        <div class="weight-section">
+            <h4>Timing Zone Penalties</h4>
+            <div class="weight-grid-four">
+                <div class="weight-input"><label for="w_zone_reject">W_Reject (0-200ms)</label><input type="number" id="w_zone_reject" value="2000" step="100"></div>
+                <div class="weight-input"><label for="w_zone_low">W_Low (200-250ms)</label><input type="number" id="w_zone_low" value="1000" step="100"></div>
+                <div class="weight-input"><label for="w_zone_high">W_High (750-1500ms)</label><input type="number" id="w_zone_high" value="500" step="50"></div>
+                <div class="weight-input"><label for="w_zone_jam">W_Jam (>1500ms)</label><input type="number" id="w_zone_jam" value="1000" step="100"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="ga-status" id="gaStatus">
+        <h3>Genetic Algorithm Status</h3>
+        <p>Run: <span id="runCount">1</span></p>
+        <p>Generation: <span id="generationCount">0</span></p>
+        <p>Best Fitness: <span id="bestFitness">N/A</span></p>
+        <p>Mutation Rate: <span id="mutationRate">N/A</span></p>
+        <p>Status: <span id="gaStatusText">Idle</span></p>
+        <p>Directive: <span id="directiveName">None (Bootstrap)</span></p>
+        <div class="io-buttons">
+            <button id="downloadHistoryButton" disabled>Save Best Designs</button>
+            <button id="downloadMetaReportButton" disabled>Save Meta-Report</button>
+            <button id="loadHistoryButton">Load Best Designs</button>
+        </div>
+        <input type="file" id="historyFileInput" accept=".json" style="display: none;" />
+        <input type="file" id="seedFileInput" accept=".json" style="display: none;" />
+        <input type="file" id="directivesFileInput" accept=".json" style="display: none;" />
+    </div>
+
+    <div class="details-grid">
+        <div class="score-board" id="scoreBoard">
+            <h3>Best Individual Details</h3>
+            <p>Throughput: <span id="throughputScore">N/A</span></p>
+            <p>Jam Penalty: <span id="jamPenalty">N/A</span></p>
+            <p>Simultaneous Penalty: <span id="simultaneousPenalty">N/A</span></p>
+            <p>Interval Zone Penalty: <span id="intervalZonePenalty">N/A</span></p>
+            <p>Physics Violations: <span id="physicsViolationCount">N/A</span></p>
+            <p>Consistency Ratio (CV): <span id="consistencyRewardRatio">N/A</span></p>
+            <p>IQR Penalty Ratio: <span id="iqrPenaltyRatio">N/A</span></p>
+            <p>Symmetry Ratio: <span id="symmetryScore">N/A</span></p>
+            <p>Active Peg Fields: <span id="activePegFieldsSpan">N/A</span></p>
+            <p>Active Complex Ramps: <span id="activeComplexRamps">N/A</span></p>
+            <p>Probe Traverse Time: <span id="probeTraverseTime">N/A</span></p>
+            <p>Sacrificial Piece Time: <span id="sacrificialPieceTime">N/A</span></p>
+        </div>
+        <div class="score-board" id="operationalParams">
+            <h3>Operational Parameters</h3>
+            <p>Board Angle: <span id="paramBoardAngle">N/A</span></p>
+            <p>Detector Offset: <span id="paramDetectorOffset">N/A</span></p>
+            <p>Free Fall Time: <span id="paramFreeFallTime">N/A</span></p>
+            <p>Drop Center X: <span id="paramConveyorDropX">N/A</span></p>
+            <p>Drop Width: <span id="paramConveyorDropWidth">N/A</span></p>
+            <p>Batch Drop Duration: <span id="paramBatchDropDuration">N/A</span></p>
+            <p>Num Batches: <span id="paramNumBatches">N/A</span></p>
+            <p>Batch Size: <span id="paramBatchSize">N/A</span></p>
+            <p>Drop Delay: <span id="paramDropDelay">N/A</span></p>
+            <p>Shake Amp (Normal): <span id="paramShakeAmp">N/A</span></p>
+            <p>Shake On/Off (Norm): <span id="paramShakeNormalTime">N/A</span></p>
+            <p>Shake Amp (Harsh): <span id="paramShakeAmpHarsh">N/A</span></p>
+            <p>Shake On/Off (Harsh): <span id="paramShakeHarshTime">N/A</span></p>
+        </div>
+    </div>
+
+    <div class="info-box">
+        <h3>Fitness Breakdown (Best Individual)</h3>
+        <table class="fitness-table">
+             <thead> <tr> <th>Term</th> <th>Weight</th> <th>Measure</th> <th>Impact</th> </tr> </thead>
+            <tbody>
+                <tr id="row-tp-exp"><td>TP Ratio Reward (Exp)</td><td id="w-tp-exp"></td><td id="m-tp-exp"></td><td id="i-tp-exp"></td></tr>
+                <tr id="row-tp-lin"><td>TP Ratio Reward (Lin)</td><td id="w-tp-lin"></td><td id="m-tp-lin"></td><td id="i-tp-lin"></td></tr>
+                <tr id="row-tc"><td>TP Count Reward</td><td id="w-tc"></td><td id="m-tc"></td><td id="i-tc"></td></tr>
+                <tr id="row-con-exp"><td>Consistency Reward (Exp)</td><td id="w-con-exp"></td><td id="m-con-exp"></td><td id="i-con-exp"></td></tr>
+                <tr id="row-con-lin"><td>Consistency Reward (Lin)</td><td id="w-con-lin"></td><td id="m-con-lin"></td><td id="i-con-lin"></td></tr>
+                <tr id="row-sym-exp"><td>Symmetry Reward (Exp)</td><td id="w-sym-exp"></td><td id="m-sym-exp"></td><td id="i-sym-exp"></td></tr>
+                <tr id="row-sym-lin"><td>Symmetry Reward (Lin)</td><td id="w-sym-lin"></td><td id="m-sym-lin"></td><td id="i-sym-lin"></td></tr>
+                <tr id="row-pref-count"><td>Pref. Interval Count</td><td id="w-pref-count"></td><td id="m-pref-count"></td><td id="i-pref-count"></td></tr>
+                <tr id="row-pref-ratio-exp"><td>Pref. Interval Ratio (Exp)</td><td id="w-pref-ratio-exp"></td><td id="m-pref-ratio-exp"></td><td id="i-pref-ratio-exp"></td></tr>
+                <tr id="row-pref-ratio-lin"><td>Pref. Interval Ratio (Lin)</td><td id="w-pref-ratio-lin"></td><td id="m-pref-ratio-lin"></td><td id="i-pref-ratio-lin"></td></tr>
+                <tr id="row-j"><td>Jam Penalty</td><td id="w-j"></td><td id="m-j"></td><td id="i-j"></td></tr>
+                <tr id="row-s"><td>Simultaneous Penalty</td><td id="w-s"></td><td id="m-s"></td><td id="i-s"></td></tr>
+                <tr id="row-iqr"><td>IQR Penalty</td><td id="w-iqr"></td><td id="m-iqr"></td><td id="i-iqr"></td></tr>
+                <tr id="row-pv"><td>Physics Violation Penalty</td><td id="w-pv"></td><td id="m-pv"></td><td id="i-pv"></td></tr>
+                <tr id="row-zone-reject"><td>Zone Penalty (Reject)</td><td id="w-zone-reject"></td><td id="m-zone-reject"></td><td id="i-zone-reject"></td></tr>
+                <tr id="row-zone-low"><td>Zone Penalty (Low)</td><td id="w-zone-low"></td><td id="m-zone-low"></td><td id="i-zone-low"></td></tr>
+                <tr id="row-zone-high"><td>Zone Penalty (High)</td><td id="w-zone-high"></td><td id="m-zone-high"></td><td id="i-zone-high"></td></tr>
+                <tr id="row-zone-jam"><td>Zone Penalty (Jam)</td><td id="w-zone-jam"></td><td id="m-zone-jam"></td><td id="i-zone-jam"></td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="charts-wrapper">
+        <div class="info-box chart-container"><h3>Exit Clump Histogram</h3><canvas id="clumpHistogram"></canvas></div>
+        <div class="info-box chart-container"><h3>Timing Interval Histogram</h3><canvas id="timingHistogram"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ADDED SCRIPT: poly-decomp is required by Matter.js to handle concave polygons -->
+  <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
+  
+  <!-- CORE LIBRARIES -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- APPLICATION SCRIPTS -->
+  <script src="simulation_viz_S34.js"></script>
+  <script src="main_S34.js" type="module"></script>
+</body>
+</html>

@@ -1,313 +1,313 @@
-# cartographer_v2.py - S34 Interactive Cartographer Dashboard
-#
-# Description:
-#   This script launches an interactive web application for analyzing S34 survey data.
-#   It allows for dynamic exploration of the fitness landscape through PCA.
-#   Users can upload data, select principal components for plotting, switch between
-#   2D and 3D views, and filter by fitness score to identify promising design regions.
-#
-# Dependencies:
-#   pip install pandas scikit-learn plotly dash pyarrow
-#
-# Usage:
-#   1. Run the S34 GA in the browser and download the survey data (.jsonl).
-#   2. Run this script from your terminal: `python cartographer_v2.py`
-#   3. Open your web browser and navigate to http://127.0.0.1:8050/
-#   4. Upload your .jsonl file using the upload box in the dashboard.
-#   5. Use the controls to explore the data.
-
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
+import json
+import argparse
 from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 import plotly.express as px
 import plotly.graph_objects as go
-import json
-import base64
-import io
-import random
-
 import dash
-from dash import dcc, html, Input, Output, State, no_update
+from dash import dcc, html, dash_table
+from dash.dependencies import Input, Output
+from dash.dash_table.Format import Format, Scheme
+import webbrowser
+from threading import Timer
 
-# --- Constants ---
-N_COMPONENTS = 10 # Number of principal components to calculate
-DEFAULT_SAMPLE_SIZE = 75000 # Default number of records to sample from large files
+# --- Data Loading and Processing Functions ---
 
-# --- Data Processing Functions ---
-
-def flatten_record(rec):
-    """Flattens a single JSON record from the survey log into a 1D dictionary."""
-    flat_rec = {}
-    
-    # Extract chromosome and result data, handling missing keys
-    chromosome = rec.get('chromosome', {})
-    result = rec.get('result', {})
-    
-    # Combine simple key-value pairs from both
-    flat_rec.update(chromosome)
-    flat_rec.update(result)
-
-    # Flatten nested structures from the chromosome
-    if 'funnel_profile' in chromosome and isinstance(chromosome['funnel_profile'], list):
-        for i, slice_ in enumerate(chromosome['funnel_profile']):
-            if isinstance(slice_, dict):
-                flat_rec[f'funnel_{i}_width'] = slice_.get('width')
-                flat_rec[f'funnel_{i}_offset'] = slice_.get('offset')
-
-    if 'complexRamps' in chromosome and isinstance(chromosome['complexRamps'], list):
-        for i, ramp in enumerate(chromosome['complexRamps']):
-             if isinstance(ramp, dict):
-                flat_rec[f'ramp_{i}_isActive'] = 1 if ramp.get('isActive') else 0
-                flat_rec[f'ramp_{i}_x'] = ramp.get('x')
-                flat_rec[f'ramp_{i}_y'] = ramp.get('y')
-                flat_rec[f'ramp_{i}_rotation'] = ramp.get('rotation')
-
-    if 'pegMatrices' in chromosome and isinstance(chromosome['pegMatrices'], list):
-        for i, matrix in enumerate(chromosome['pegMatrices']):
-            if isinstance(matrix, dict):
-                flat_rec[f'peg_{i}_isActive'] = 1 if matrix.get('isActive') else 0
-                flat_rec[f'peg_{i}_gridX'] = matrix.get('gridX')
-                flat_rec[f'peg_{i}_gridY'] = matrix.get('gridY')
-
-    # Remove non-numeric or problematic keys before analysis
-    keys_to_remove = [
-        'id', 'fitnessHistory', 'fullResult', 'intervals', 
-        'clumpHistogram', 'exitReason', 'isEstimated', 'error', 
-        'fitnessBreakdown', 'featureFlags', 'funnel_profile', 
-        'complexRamps', 'pegMatrices'
-    ]
-    for key in keys_to_remove:
-        flat_rec.pop(key, None)
-        
-    return flat_rec
-
-def parse_jsonl_data(contents, sample_size):
-    """
-    Loads and preprocesses a sample of the .jsonl survey data using Reservoir Sampling
-    to handle very large files without crashing.
-    """
-    content_type, content_string = contents.split(',')
-    decoded = base64.b64decode(content_string)
-    
-    reservoir = []
+def load_data_from_jsonl(file_path):
+    """Loads data from a JSONL file, handling potential errors."""
+    records = []
     try:
-        # Use a text stream to decode UTF-8 on the fly
-        file_stream = io.TextIOWrapper(io.BytesIO(decoded), encoding='utf-8')
+        with open(file_path, 'r') as f:
+            for line in f:
+                try:
+                    records.append(json.loads(line))
+                except json.JSONDecodeError:
+                    print(f"Warning: Skipping a malformed line in {file_path}")
+    except FileNotFoundError:
+        print(f"Error: File not found at {file_path}")
+    return records
+
+def flatten_data(records):
+    """
+    Flattens the nested JSON data into a pandas DataFrame, unpacking
+    funnel profiles, latent genes, and S34 functional annotations.
+    """
+    flat_data = []
+    for record in records:
+        chromosome = record.get('chromosome', {})
+        result = record.get('result', {})
         
-        # Reservoir Sampling Algorithm
-        for i, line in enumerate(file_stream):
-            if not line.strip():
-                continue
+        row = {
+            'id': chromosome.get('id'),
+            'fitness': chromosome.get('fitness'),
+            'finalScore': result.get('finalScore'),
+            'throughput': result.get('throughputScore'),
+            'jamPenalty': result.get('jamPenalty'),
+            'simultaneousPenalty': result.get('simultaneousPenalty'),
+            'consistencyRewardRatio': result.get('consistencyRewardRatio'),
+            'symmetryRewardRatio': result.get('symmetryRewardRatio'),
+            'normalizedIQR': result.get('normalizedIQR'),
+            'physicsViolationCount': result.get('physicsViolationCount'),
+            'intervalZonePenalty': result.get('intervalZonePenalty'),
+            'preferredIntervalCount': result.get('preferredIntervalCount'),
+            'preferredIntervalRatio': result.get('preferredIntervalRatio'),
+            'rejectCount': result.get('rejectCount'),
+            'lowCount': result.get('lowCount'),
+            'highCount': result.get('highCount'),
+            'jamCount': result.get('jamCount'),
+            'isEstimated': 1 if result.get('isEstimated') else 0,
+            
+            'boardAngle': chromosome.get('boardAngle'),
+            'machineHeight': chromosome.get('machineHeight'),
+            'detectorOffset': chromosome.get('detectorOffset'),
+            'batchSize': chromosome.get('batchSize'),
+            'numBatches': chromosome.get('numBatches'),
+            'dropDelayTime': chromosome.get('dropDelayTime'),
+            'batchDropDuration': chromosome.get('batchDropDuration'),
+            'freeFallTime': chromosome.get('freeFallTime'),
+            'conveyorDropX': chromosome.get('conveyorDropX'),
+            'conveyorDropWidth': chromosome.get('conveyorDropWidth'),
+            'shakeAmplitude': chromosome.get('shakeAmplitude'),
+            'shakeTimeOn': chromosome.get('shakeTimeOn'),
+            'shakeTimeOff': chromosome.get('shakeTimeOff'),
+            'shakeAmplitude_harsh': chromosome.get('shakeAmplitude_harsh'),
+            'shakeTimeOn_harsh': chromosome.get('shakeTimeOn_harsh'),
+            'shakeTimeOff_harsh': chromosome.get('shakeTimeOff_harsh'),
+        }
 
-            if i < sample_size:
-                # Fill the reservoir initially
-                reservoir.append(line)
-            else:
-                # Replace elements with decreasing probability
-                j = random.randint(0, i)
-                if j < sample_size:
-                    reservoir[j] = line
+        # Aggregate counts for latent structural genes
+        complex_ramps = chromosome.get('complexRamps', [])
+        row['active_complex_ramps'] = sum(1 for r in complex_ramps if r.get('isActive'))
+
+        peg_matrices = chromosome.get('pegMatrices', [])
+        row['active_peg_matrices'] = sum(1 for p in peg_matrices if p.get('isActive'))
+
+        # Flatten Funnel Profile (Now tracking Y position alongside width/offset)
+        funnel_profile = chromosome.get('funnel_profile', [])
+        for i, slice_data in enumerate(funnel_profile):
+            row[f'funnel_width_{i}'] = slice_data.get('width')
+            row[f'funnel_offset_{i}'] = slice_data.get('offset')
+            row[f'funnel_y_position_{i}'] = slice_data.get('y_position')
+
+        # Flatten River of Flow Annotations
+        annotations = result.get('functionalAnnotations', {})
+        components = annotations.get('components', [])
+        for i, comp_data in enumerate(components):
+            row[f'component_dist_from_center_{i}'] = comp_data.get('distanceFromCenterline')
+            row[f'component_in_river_prop_{i}'] = comp_data.get('inRiverProportion')
+            
+        flat_data.append(row)
         
-        # Now, parse only the JSON from the sampled lines
-        records = []
-        for line in reservoir:
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError:
-                print(f"Warning: Skipping malformed line in sample: {line.strip()}")
+    return pd.DataFrame(flat_data)
 
-    except Exception as e:
-        print(f"Error reading file stream: {e}")
-        return None, None, None, f"Error processing file: {e}"
-
-    if not records:
-        return pd.DataFrame(), None, None, "No valid records found in file."
-
-    flat_records = [flatten_record(rec) for rec in records]
-    df = pd.DataFrame(flat_records)
+def prepare_data_for_pca(df):
+    """Prepares the DataFrame for PCA, separating machine variables from results."""
+    # Updated to capture all relevant machine configuration genes including latent components
+    machine_cols = [col for col in df.columns if 'funnel_' in col or 
+                    'component_' in col or 
+                    col in ['boardAngle', 'machineHeight', 'detectorOffset', 'batchSize', 
+                            'numBatches', 'dropDelayTime', 'batchDropDuration', 'freeFallTime', 
+                            'conveyorDropX', 'conveyorDropWidth', 'shakeAmplitude', 'shakeTimeOn', 
+                            'shakeTimeOff', 'shakeAmplitude_harsh', 'shakeTimeOn_harsh', 'shakeTimeOff_harsh',
+                            'active_complex_ramps', 'active_peg_matrices']]
     
-    if 'finalScore' not in df.columns:
-        return pd.DataFrame(), None, None, "'finalScore' column not found."
+    # Updated to capture the expansive S34 reward/penalty suite
+    result_cols = ['fitness', 'finalScore', 'throughput', 'jamPenalty', 'simultaneousPenalty', 
+                   'consistencyRewardRatio', 'symmetryRewardRatio', 'normalizedIQR', 
+                   'physicsViolationCount', 'intervalZonePenalty', 'preferredIntervalCount',
+                   'preferredIntervalRatio', 'rejectCount', 'lowCount', 'highCount', 'jamCount']
+                   
+    machine_df = df[machine_cols].select_dtypes(include=np.number)
+    
+    print(f"Selected {len(machine_df.columns)} machine features for PCA.")
 
-    gene_cols = [col for col in df.columns if df[col].dtype in ['int64', 'float64'] and col != 'finalScore']
-    df_genes = df[gene_cols].copy()
-    
-    df_genes.fillna(df_genes.mean(), inplace=True)
-    
+    for col in machine_df.columns:
+        if machine_df[col].isnull().sum() > 0:
+            mean_val = machine_df[col].mean()
+            # Fills NA values in a way that avoids the Pandas FutureWarning
+            machine_df.fillna({col: mean_val}, inplace=True)
+            print(f"  - Imputed {machine_df[col].isnull().sum()} missing values in '{col}' with mean ({mean_val:.2f})")
+
+    return machine_df, result_cols
+
+def perform_pca(data, n_components=10):
+    """Performs PCA and returns PCs and transposed component loadings."""
     scaler = StandardScaler()
-    scaled_genes = scaler.fit_transform(df_genes)
+    scaled_data = scaler.fit_transform(data)
     
-    pca = PCA(n_components=N_COMPONENTS)
-    principal_components = pca.fit_transform(scaled_genes)
+    pca = PCA(n_components=n_components)
+    principal_components = pca.fit_transform(scaled_data)
     
-    pc_df = pd.DataFrame(data=principal_components, columns=[f'PC{i+1}' for i in range(N_COMPONENTS)])
-    pc_df['fitness'] = df['finalScore'].values
+    pc_df = pd.DataFrame(data=principal_components, columns=[f'PC{i+1}' for i in range(n_components)])
     
-    return pc_df, pca, gene_cols, None
+    print("\nPCA complete. Explained variance by component:")
+    total_variance = 0
+    for i, variance in enumerate(pca.explained_variance_ratio_):
+        total_variance += variance
+        print(f"  - PC{i+1}: {variance:.2%} (Cumulative: {total_variance:.2%})")
+    
+    components_df = pd.DataFrame(pca.components_, columns=data.columns, index=[f'PC{i+1}' for i in range(n_components)])
+    
+    return pc_df, components_df.T
+
+def generate_summary_report(components_df):
+    """Generates a markdown string summarizing the top 10 factors for each PC."""
+    report_parts = ["# PCA Summary Report\n\nThis report shows the top 10 most influential variables for each Principal Component.\n"]
+    for pc in components_df.columns:
+        report_parts.append(f"\n---\n\n### **{pc}**\n")
+        top_factors = components_df[pc].abs().nlargest(10).index
+        for factor in top_factors:
+            value = components_df.loc[factor, pc]
+            report_parts.append(f"- **{factor}:** {value:.3f}\n")
+    return "".join(report_parts)
+
+def create_trend_analysis_layout(df):
+    """Generates the layout for the Trend Analysis tab."""
+    plots = []
+    for i in range(1, 11):
+        pc = f'PC{i}'
+        fig = px.scatter(df, x='succession', y=pc, title=f'Trend for {pc}', trendline="ols", trendline_color_override="red")
+        fig.update_traces(marker=dict(size=3, opacity=0.5))
+        
+        # Get regression results
+        results = px.get_trendline_results(fig)
+        model = results.iloc[0]["px_fit_results"]
+        r_squared = model.rsquared
+        slope = model.params[1]
+        
+        stats_text = f"Slope: {slope:.4f} | R²: {r_squared:.3f}"
+        
+        plots.append(
+            html.Div([
+                html.H4(f"{pc} Trend", style={'textAlign': 'center'}),
+                dcc.Graph(figure=fig),
+                html.P(stats_text, style={'textAlign': 'center', 'fontWeight': 'bold'})
+            ], style={'width': '48%', 'display': 'inline-block', 'padding': '10px'})
+        )
+    return html.Div(plots)
 
 # --- Dash App Initialization ---
-app = dash.Dash(__name__, title="S34 Cartographer")
-server = app.server
+app = dash.Dash(__name__, title="PCA Fitness Landscape Explorer")
 
-# --- App Layout ---
-app.layout = html.Div(style={'backgroundColor': '#111111', 'color': '#DDDDDD', 'fontFamily': 'sans-serif'}, children=[
-    html.H1('S34 Interactive Cartographer', style={'textAlign': 'center', 'color': '#007BFF'}),
-    
-    html.Div(style={'width': '98%', 'margin': '10px auto', 'display': 'flex', 'alignItems': 'center', 'gap': '20px'}, children=[
-        dcc.Upload(
-            id='upload-data',
-            children=html.Div(['Drag and Drop or ', html.A('Select Survey File (.jsonl)')]),
-            style={
-                'flexGrow': '1', 'height': '60px', 'lineHeight': '60px',
-                'borderWidth': '1px', 'borderStyle': 'dashed', 'borderRadius': '5px',
-                'textAlign': 'center'
-            },
-            multiple=False
-        ),
-        html.Div(style={'display': 'flex', 'flexDirection': 'column'}, children=[
-            html.Label('Sample Size:', style={'marginBottom': '5px', 'fontSize': '14px'}),
-            dcc.Input(
-                id='sample-size-input',
-                type='number',
-                value=DEFAULT_SAMPLE_SIZE,
-                style={'width': '120px'}
-            )
-        ])
-    ]),
-    
-    html.Div(id='output-data-upload', style={'textAlign': 'center', 'padding': '10px'}),
-
-    html.Div(id='dashboard-container', style={'display': 'none'}, children=[
-        html.Div(className='row', style={'display': 'flex', 'padding': '10px'}, children=[
-            html.Div(className='four columns', style={'width': '25%', 'padding': '10px'}, children=[
-                html.H4('Plot Controls'),
-                dcc.RadioItems(id='view-mode-selector', options=[{'label': '2D', 'value': '2D'}, {'label': '3D', 'value': '3D'}], value='3D', labelStyle={'display': 'inline-block', 'marginRight': '10px'}),
-                html.Hr(),
-                html.Label('X-Axis:'),
-                dcc.Dropdown(id='xaxis-pc', options=[{'label': f'PC{i+1}', 'value': f'PC{i+1}'} for i in range(N_COMPONENTS)], value='PC1'),
-                html.Label('Y-Axis:'),
-                dcc.Dropdown(id='yaxis-pc', options=[{'label': f'PC{i+1}', 'value': f'PC{i+1}'} for i in range(N_COMPONENTS)], value='PC2'),
-                html.Label('Z-Axis (3D only):'),
-                dcc.Dropdown(id='zaxis-pc', options=[{'label': f'PC{i+1}', 'value': f'PC{i+1}'} for i in range(N_COMPONENTS)], value='PC3', disabled=False),
-                html.Hr(),
-                html.Label('Fitness Score Range:'),
-                dcc.RangeSlider(id='fitness-slider', min=0, max=1, step=0.01, value=[0,1], marks=None, tooltip={"placement": "bottom", "always_visible": True}),
-            ]),
-            
-            html.Div(className='eight columns', style={'width': '75%'}, children=[
-                dcc.Graph(id='fitness-landscape-plot', style={'height': '80vh'})
-            ])
-        ]),
-        
-        html.Div(className='row', style={'display': 'flex', 'padding': '10px'}, children=[
-            dcc.Graph(id='explained-variance-plot', style={'width': '50%'}),
-            dcc.Graph(id='component-heatmap-plot', style={'width': '50%'})
-        ])
-    ]),
-    
-    dcc.Store(id='processed-data-store')
-])
-
-# --- Callbacks ---
-
-@app.callback(
-    [Output('processed-data-store', 'data'),
-     Output('dashboard-container', 'style'),
-     Output('output-data-upload', 'children'),
-     Output('fitness-slider', 'min'),
-     Output('fitness-slider', 'max'),
-     Output('fitness-slider', 'value')],
-    [Input('upload-data', 'contents')],
-    [State('upload-data', 'filename'),
-     State('sample-size-input', 'value')]
-)
-def process_uploaded_file(contents, filename, sample_size):
-    """Callback to process uploaded data and store it."""
-    if contents is None:
-        return None, {'display': 'none'}, "", 0, 1, [0, 1]
-
-    if not sample_size or sample_size <= 0:
-        return None, {'display': 'none'}, html.Div('Error: Sample size must be a positive number.', style={'color': 'red'}), 0, 1, [0, 1]
-
-    status_message = html.Div(f'Processing a random sample of {sample_size} records from {filename}... Please wait.')
-    
-    try:
-        pc_df, pca, gene_cols, error_message = parse_jsonl_data(contents, sample_size)
-        
-        if error_message:
-            return None, {'display': 'none'}, html.Div(f'Error: {error_message}', style={'color': 'red'}), 0, 1, [0, 1]
-
-        if pc_df.empty:
-             return None, {'display': 'none'}, html.Div('Error: No data could be processed from the file.', style={'color': 'red'}), 0, 1, [0, 1]
-
-        stored_data = {
-            'pc_df': pc_df.to_json(date_format='iso', orient='split'),
-            'explained_variance_ratio': list(pca.explained_variance_ratio_),
-            'components': pca.components_.tolist(),
-            'gene_cols': gene_cols
-        }
-        
-        min_fitness = pc_df['fitness'].min()
-        max_fitness = pc_df['fitness'].max()
-        
-        success_message = html.Div(f'Successfully processed a sample of {len(pc_df)} records from {filename}.', style={'color': 'green'})
-        return stored_data, {'display': 'block'}, success_message, min_fitness, max_fitness, [min_fitness, max_fitness]
-
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        error_div = html.Div(f'A critical error occurred during processing: {e}', style={'color': 'red'})
-        return None, {'display': 'none'}, error_div, 0, 1, [0, 1]
-
-
-@app.callback(
-    Output('zaxis-pc', 'disabled'),
-    [Input('view-mode-selector', 'value')]
-)
-def toggle_z_axis_dropdown(view_mode):
-    return view_mode == '2D'
-
-@app.callback(
-    [Output('fitness-landscape-plot', 'figure'),
-     Output('explained-variance-plot', 'figure'),
-     Output('component-heatmap-plot', 'figure')],
-    [Input('processed-data-store', 'data'),
-     Input('xaxis-pc', 'value'),
-     Input('yaxis-pc', 'value'),
-     Input('zaxis-pc', 'value'),
-     Input('view-mode-selector', 'value'),
-     Input('fitness-slider', 'value')]
-)
-def update_graphs(stored_data, x_pc, y_pc, z_pc, view_mode, fitness_range):
-    if stored_data is None:
-        return go.Figure(), go.Figure(), go.Figure()
-
-    pc_df = pd.read_json(stored_data['pc_df'], orient='split')
-    explained_variance_ratio = stored_data['explained_variance_ratio']
-    components = np.array(stored_data['components'])
-    gene_cols = stored_data['gene_cols']
-    
-    if not fitness_range:
-        return no_update, no_update, no_update
-        
-    dff = pc_df[(pc_df['fitness'] >= fitness_range[0]) & (pc_df['fitness'] <= fitness_range[1])]
-
-    if view_mode == '3D':
-        landscape_fig = px.scatter_3d(dff, x=x_pc, y=y_pc, z=z_pc, color='fitness', color_continuous_scale=px.colors.sequential.Viridis, hover_name=dff.index, title='3D Fitness Landscape')
-        landscape_fig.update_traces(marker=dict(size=3))
-    else:
-        landscape_fig = px.scatter(dff, x=x_pc, y=y_pc, color='fitness', color_continuous_scale=px.colors.sequential.Viridis, hover_name=dff.index, title='2D Fitness Landscape')
-    
-    landscape_fig.update_layout(margin=dict(l=0, r=0, b=0, t=40), plot_bgcolor="#222222", paper_bgcolor="#111111", font_color="#DDDDDD")
-
-    variance_fig = px.bar(x=[f'PC{i+1}' for i in range(N_COMPONENTS)], y=explained_variance_ratio, labels={'x': 'Principal Component', 'y': 'Explained Variance Ratio'}, title='Explained Variance by Principal Component')
-    variance_fig.update_layout(plot_bgcolor="#222222", paper_bgcolor="#111111", font_color="#DDDDDD")
-
-    heatmap_fig = go.Figure(data=go.Heatmap(z=components, x=[f'PC{i+1}' for i in range(N_COMPONENTS)], y=gene_cols, colorscale='RdBu', zmid=0))
-    heatmap_fig.update_layout(title='PCA Component Loadings', plot_bgcolor="#222222", paper_bgcolor="#111111", font_color="#DDDDDD")
-    
-    return landscape_fig, variance_fig, heatmap_fig
-
-# --- Main Execution Block ---
+# --- Main execution block ---
 if __name__ == '__main__':
-    app.run(debug=True)
+    parser = argparse.ArgumentParser(description='Analyze and visualize GA data with PCA.')
+    parser.add_argument('files', nargs='+', help='Path(s) to the JSONL file(s).')
+    args = parser.parse_args()
+
+    # --- Data Loading and Processing ---
+    print(f"Loading data from {len(args.files)} file(s)...")
+    all_records = load_data_from_jsonl(args.files[0])
+    if not all_records:
+        print("No records loaded. Exiting.")
+        exit()
+    print(f"Loaded a total of {len(all_records)} records.")
+
+    df = flatten_data(all_records)
+    machine_df, result_cols = prepare_data_for_pca(df.copy())
+    pc_df, components_df = perform_pca(machine_df)
+    full_analysis_df = pd.concat([df, pc_df], axis=1)
+    full_analysis_df['succession'] = range(len(full_analysis_df))
+    full_analysis_df['generation'] = full_analysis_df['succession'] // 120
+
+    # --- UI Component Generation ---
+    summary_report_text = generate_summary_report(components_df)
+    trend_analysis_layout = create_trend_analysis_layout(full_analysis_df)
+    
+    all_options = []
+    
+    # --- The succession/timeline parameters added here ---
+    all_options.append({'label': 'Timeline (Individual Order)', 'value': 'succession'})
+    all_options.append({'label': 'Timeline (Discrete Generation)', 'value': 'generation'})
+    
+    all_options.extend([{'label': f'PC{i+1}', 'value': f'PC{i+1}'} for i in range(10)])
+    all_options.extend([{'label': col, 'value': col} for col in result_cols if col in full_analysis_df.columns])
+    all_options.extend([{'label': col, 'value': col} for col in sorted(machine_df.columns)])
+    
+    unique_options = []
+    seen_values = set()
+    for option in all_options:
+        if option['value'] not in seen_values:
+            unique_options.append(option)
+            seen_values.add(option['value'])
+
+    z_axis_options = [{'label': 'None (2D Plot)', 'value': 'None'}] + unique_options
+
+    table_columns = [{"name": i, "id": i, "type": "numeric", "format": Format(precision=3, scheme=Scheme.fixed)} for i in components_df.columns]
+    table_columns.insert(0, {"name": "Feature", "id": "Feature", "type": "text"})
+    
+    style_data_conditional = []
+    for pc in components_df.columns:
+        styles = [
+            {'if': {'filter_query': f'{{{pc}}} <= -0.3', 'column_id': pc}, 'backgroundColor': '#d73027', 'color': 'white'},
+            {'if': {'filter_query': f'{{{pc}}} > -0.3 && {{{pc}}} <= -0.1', 'column_id': pc}, 'backgroundColor': '#fc8d59', 'color': 'black'},
+            {'if': {'filter_query': f'{{{pc}}} > -0.1 && {{{pc}}} < 0.1', 'column_id': pc}, 'backgroundColor': '#fee090', 'color': 'black'},
+            {'if': {'filter_query': f'{{{pc}}} >= 0.1 && {{{pc}}} < 0.3', 'column_id': pc}, 'backgroundColor': '#91bfdb', 'color': 'black'},
+            {'if': {'filter_query': f'{{{pc}}} >= 0.3', 'column_id': pc}, 'backgroundColor': '#4575b4', 'color': 'white'},
+        ]
+        style_data_conditional.extend(styles)
+
+    # --- App Layout ---
+    app.layout = html.Div([
+        html.H1("Interactive PCA Fitness Landscape Explorer", style={'textAlign': 'center', 'fontFamily': 'Arial'}),
+        dcc.Tabs(id="tabs-main", children=[
+            dcc.Tab(label='Plotting', children=[
+                html.Div([
+                    html.Div([html.Label("X-Axis"), dcc.Dropdown(id='xaxis-column', options=unique_options, value='succession')], style={'width': '24%', 'display': 'inline-block'}),
+                    html.Div([html.Label("Y-Axis"), dcc.Dropdown(id='yaxis-column', options=unique_options, value='fitness')], style={'width': '24%', 'display': 'inline-block', 'padding': '0 10px'}),
+                    html.Div([html.Label("Z-Axis"), dcc.Dropdown(id='zaxis-column', options=z_axis_options, value='None')], style={'width': '24%', 'display': 'inline-block'}),
+                    html.Div([html.Label("Color"), dcc.Dropdown(id='color-column', options=unique_options, value='PC1')], style={'width': '24%', 'display': 'inline-block', 'padding': '0 10px'}),
+                ], style={'padding': '20px 0'}),
+                dcc.Graph(id='main-plot', style={'height': '70vh'}),
+            ]),
+            dcc.Tab(label='PCA Components Table', children=[
+                html.H3("Principal Component Loadings"),
+                html.P("This table shows how much each machine variable contributes to the principal components. Click column headers to sort."),
+                dash_table.DataTable(
+                    id='pca-table',
+                    columns=table_columns,
+                    data=components_df.reset_index().rename(columns={'index': 'Feature'}).to_dict('records'),
+                    sort_action="native",
+                    style_table={'overflowX': 'auto'},
+                    style_cell={'textAlign': 'left'},
+                    style_header={'fontWeight': 'bold'},
+                    style_cell_conditional=[{'if': {'column_id': 'Feature'}, 'minWidth': '300px', 'width': '300px', 'maxWidth': '300px'}],
+                    style_data_conditional=style_data_conditional
+                )
+            ]),
+            dcc.Tab(label='Summary Report', children=[
+                dcc.Markdown(summary_report_text, style={'padding': '20px', 'whiteSpace': 'pre-wrap'})
+            ]),
+            dcc.Tab(label='Trend Analysis', children=[
+                trend_analysis_layout
+            ]),
+        ]),
+    ], style={'padding': '10px', 'fontFamily': 'Arial'})
+
+    # --- Callbacks ---
+    @app.callback(Output('main-plot', 'figure'), [Input('xaxis-column', 'value'), Input('yaxis-column', 'value'), Input('zaxis-column', 'value'), Input('color-column', 'value')])
+    def update_main_plot(xaxis, yaxis, zaxis, color):
+        if not all([xaxis, yaxis, zaxis, color]):
+            return go.Figure().update_layout(title_text="Please select values for all dropdowns.")
+
+        if zaxis == 'None': # 2D Plot
+            fig = px.scatter(full_analysis_df, x=xaxis, y=yaxis, color=color, hover_name='id', color_continuous_scale=px.colors.sequential.Viridis, title=f"2D Scatter: {xaxis} vs. {yaxis}")
+        else: # 3D Plot
+            fig = px.scatter_3d(full_analysis_df, x=xaxis, y=yaxis, z=zaxis, color=color, hover_name='id', color_continuous_scale=px.colors.sequential.Viridis, title=f"3D Scatter: {xaxis} vs. {yaxis} vs. {zaxis}")
+            fig.update_traces(marker=dict(size=2, opacity=0.8))
+            fig.update_layout(scene=dict(xaxis_title=xaxis, yaxis_title=yaxis, zaxis_title=zaxis))
+        
+        fig.update_layout(margin=dict(l=0, r=0, b=0, t=40))
+        return fig
+
+    # --- Run Server & Auto-Open Browser ---
+    def open_browser():
+        webbrowser.open_new("http://127.0.0.1:8050/")
+
+    # Wait 1 second for the server to start, then open the browser
+    Timer(1, open_browser).start()
+    
+    # use_reloader=False prevents the browser from opening twice
+    app.run(debug=True, use_reloader=False)
