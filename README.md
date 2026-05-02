@@ -1,4 +1,6 @@
-# Project S34: AI-Driven Mechanics for Small Parts Sorting
+# Evoluationary Design of a Small Parts Singulator Sorting Machine
+
+🎥 **[Watch the System Overview & Demo on YouTube](https://youtu.be/e0uPb7Tg9FI)**
 
 ## Overview
 Project S34 is a highly specialized Machine Learning and Simulation pipeline designed to procedurally generate, optimize, and validate physical sorting mechanisms for small, asymmetric parts. 

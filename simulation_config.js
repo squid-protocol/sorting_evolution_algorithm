@@ -67,6 +67,12 @@ export const PIECE_LIBRARY = [
 // ===================================================================================
 
 export const SIM_CONFIG = {
+    // S34 Compatibility Aliases
+    BOARD_WIDTH: 2400,          
+    BOARD_HEIGHT: 3000,         
+    INTERNAL_WALL_THICKNESS: 20,
+    
+    // S35/Legacy Nomenclature
     MACHINE_WIDTH: 2400,
     MACHINE_HEIGHT: 3000,
     WALL_THICKNESS: 20,
@@ -76,6 +82,10 @@ export const SIM_CONFIG = {
 };
 
 export const SENSOR_CONFIG = {
+    // S34 Compatibility Alias
+    SENSOR_WIDTH: 300,
+    
+    // S35/Legacy Nomenclature
     DETECTOR_WIDTH: 300
 };
 

@@ -45,8 +45,16 @@ self.onmessage = function(e) {
         case 'init':
             workerId = payload.id;
             sim_config = payload.config;
-            importScripts('https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js');
+            
+            // FIX: Inject poly-decomp into the isolated worker thread
+            importScripts(
+                'https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js',
+                'https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js'
+            );
+            
             Matter = self.Matter;
+            Matter.Common.setDecomp(self.decomp); // Bind the decomposer to the engine
+            
             self.postMessage({ type: 'worker_ready', payload: { id: workerId } });
             break;
         case 'run_positive_control':
@@ -84,6 +92,10 @@ function runPositiveControlTest(chromosome) {
 class Simulation {
     constructor(config, fitnessWeights) {
         this.config = config;
+        // --- CONFIG BULLETPROOFING: Ensure BOARD_WIDTH exists to prevent NaN wall rendering ---
+        if (!this.config.SIM_CONFIG) this.config.SIM_CONFIG = {};
+        if (!this.config.SIM_CONFIG.BOARD_WIDTH) this.config.SIM_CONFIG.BOARD_WIDTH = 1000;
+        // --------------------------------------------------------------------------------------
         this.fitnessWeights = fitnessWeights;
         this.Matter = Matter;
         const { Engine } = this.Matter;
@@ -116,7 +128,8 @@ class Simulation {
 
             return { ...results, functionalAnnotations: annotations, featureFlags: GA_S34_FEATURE_FLAGS };
         } catch (error) {
-            console.error(`[Sub-Worker ${workerId}] CRITICAL SIMULATION CRASH for chromosome ${chromosome.id}:`, error);
+            console.error(`[Sub-Worker ${workerId}] SIMULATION ABORTED for chromosome ${chromosome.id}. Engine halted.`);
+            // Return a score of 0 so the GA learns this configuration is deadly
             return this.calculateFinalMetrics("CRASH", [], chromosome, error.message);
         }
     }
@@ -134,7 +147,12 @@ class Simulation {
                 if (matrix.isActive) boardBodies.push(...this.createPegsFromMatrix(matrix));
             });
         }
-        World.add(this.world, boardBodies);
+
+        // --- QUARANTINE SHIELD ---
+        // If a legacy seed generated a corrupted body (NaN position/angle), delete it so it can't crash the engine.
+        const safeBodies = boardBodies.filter(b => b && b.position && !isNaN(b.position.x) && !isNaN(b.position.y) && !isNaN(b.angle));
+        
+        World.add(this.world, safeBodies);
     }
 
     createBoardFromFunctionalProfile(chromosome) {
@@ -220,6 +238,37 @@ class Simulation {
         return newPegs;
     }
 
+    captureTelemetrySnapshot(chromosome, triggerReason) {
+        const pieces = this.Matter.Composite.allBodies(this.world).filter(b => b.label === 'lego');
+        let extremeX = 0, extremeY = 0, maxSpeed = 0, nanCount = 0;
+
+        pieces.forEach(p => {
+            if (isNaN(p.position.x) || isNaN(p.position.y)) nanCount++;
+            if (Math.abs(p.position.x) > extremeX) extremeX = Math.abs(p.position.x);
+            if (Math.abs(p.position.y) > extremeY) extremeY = Math.abs(p.position.y);
+            if (p.speed > maxSpeed) maxSpeed = p.speed;
+        });
+
+        const telemetryDump = {
+            TRIGGER: triggerReason,
+            chromosome_id: chromosome.id,
+            boardAngle_degrees: (chromosome.boardAngle * (180 / Math.PI)).toFixed(2),
+            gravity_vector: { x: this.engine.gravity.x.toFixed(4), y: this.engine.gravity.y.toFixed(4) },
+            simulation_time_ms: this.simulationTime,
+            active_pieces: pieces.length,
+            nan_pieces_detected: nanCount,
+            physics_extremes: {
+                max_x_position: extremeX.toFixed(2),
+                max_y_position: extremeY.toFixed(2),
+                max_speed: maxSpeed.toFixed(2)
+            }
+        };
+
+        console.error(`\n🚨 [Sub-Worker ${workerId}] FATAL PHYSICS ANOMALY DETECTED 🚨`);
+        console.table(telemetryDump);
+        
+        return telemetryDump;
+    }
 
     runSimulationLoop(chromosome) {
         const { Engine, Composite, Bodies, Body } = this.Matter;
@@ -259,10 +308,20 @@ class Simulation {
                         const newSpawns = Math.min(piecesPerBatch, expectedSpawns) - batch.piecesSpawned;
                         if (newSpawns > 0) {
                             for (let i = 0; i < newSpawns; i++) {
-                                const shapeDef = this.pieceLibrary[Math.floor(Math.random() * this.pieceLibrary.length)];
-                                const spawnX = chromosome.conveyorDropX + (Math.random() - 0.5) * chromosome.conveyorDropWidth;
-                                const piece = Bodies.fromVertices(spawnX, 10, [shapeDef.vertices], { label: 'lego', ...this.config.PIECE_PHYSICS_PROPERTIES });
-                                Body.setVelocity(piece, { x: 0, y: this.engine.gravity.y * (chromosome.freeFallTime / TIME_STEP) });
+                                let spawnX = chromosome.conveyorDropX + (Math.random() - 0.5) * chromosome.conveyorDropWidth;
+                                let startVY = this.engine.gravity.y * (chromosome.freeFallTime / TIME_STEP);
+                                
+                                // SILENT BULLETPROOFING: If the GA hands us a corrupted NaN coordinate, 
+                                // do not crash and do not spam the console. Just silently force it to the center of the board.
+                                if (isNaN(spawnX)) {
+                                    spawnX = this.config.SIM_CONFIG.BOARD_WIDTH / 2;
+                                }
+                                if (isNaN(startVY)) {
+                                    startVY = 0;
+                                }
+
+                                const piece = Bodies.rectangle(spawnX, 10, 12, 12, { label: 'lego', ...this.config.PIECE_PHYSICS_PROPERTIES });
+                                Body.setVelocity(piece, { x: 0, y: startVY });
                                 Composite.add(this.world, piece);
                             }
                             batch.piecesSpawned += newSpawns;
@@ -278,7 +337,31 @@ class Simulation {
                 if (shakeAmplitude_harsh > 0 && (shakeTimeOn_harsh + shakeTimeOff_harsh) > 0 && this.simulationTime % (shakeTimeOn_harsh + shakeTimeOff_harsh) < shakeTimeOn_harsh) shakeX += (Math.random() - 0.5) * shakeAmplitude_harsh;
                 this.engine.gravity.x = shakeX;
 
-                Engine.update(this.engine, TIME_STEP);
+                try {
+                    // Pre-crash speed check: Are pieces moving impossibly fast?
+                    const pieces = Composite.allBodies(this.world).filter(b => b.label === 'lego');
+                    const explosivePiece = pieces.find(p => p.speed > 500); // 500 px per tick is an explosion
+                    if (explosivePiece) {
+                        this.captureTelemetrySnapshot(chromosome, "Speed Exceeded 500px/tick (Pre-Crash)");
+                        return "PhysicsViolation"; // Force the GA to fail this board safely
+                    }
+
+                    // Advance the physics engine
+                    Engine.update(this.engine, TIME_STEP);
+
+                    // Post-crash NaN check: Did the update corrupt the math?
+                    const corruptedPiece = pieces.find(p => isNaN(p.position.x) || isNaN(p.position.y));
+                    if (corruptedPiece) {
+                        this.captureTelemetrySnapshot(chromosome, "NaN Coordinates Detected (Math Corrupted)");
+                        return "CRASH";
+                    }
+
+                } catch (engineError) {
+                    // If matter.js throws the 'index' error, catch it immediately
+                    this.captureTelemetrySnapshot(chromosome, `Matter.js threw: ${engineError.message}`);
+                    throw engineError; // Re-throw to be caught by the outer loop
+                }
+
                 this.simulationTime += TIME_STEP;
                 accumulator -= TIME_STEP;
 
@@ -355,7 +438,11 @@ class Simulation {
 
         for (let i = piecesInWorld.length - 1; i >= 0; i--) {
             const body = piecesInWorld[i];
-            if (body.position.y > lost_piece_sensor_y) {
+            
+            // X-Axis Kill Plane added to prevent horizontal explosions
+            const isWayOffScreenX = body.position.x < -1000 || body.position.x > this.config.SIM_CONFIG.BOARD_WIDTH + 1000;
+            
+            if (body.position.y > lost_piece_sensor_y || isWayOffScreenX) {
                  this.physicsViolationCount++;
                  Composite.remove(this.world, body);
                  continue;

@@ -1,6 +1,6 @@
 # Project S34: Evolutionary Design of Small Parts Sorting Mechanisms
 
-![Initial Poor Solution](assets/initial_poor_solution.png)
+![Initial Poor Solution](../assets/initial_poor_solution.png)
 *An example of a poor initial generation state, before evolutionary optimization.*
 
 ## Overview
@@ -10,7 +10,7 @@ Standard optimization algorithms struggle with rigid-body physics simulations (u
 
 To solve this, S34 features a completely custom, from-scratch evolutionary architecture. It leverages a heterogeneous genome with latent traits, multi-objective fitness sculpting, dynamic extinction events, and a "Human-in-the-Loop" (HitL) directive system to force the algorithm out of local optima and discover highly efficient, non-intuitive sorting geometries.
 
-![Evolution Data Over Time](assets/evolution_data_over_time.png)
+![Evolution Data Over Time](../assets/evolution_data_over_time.png)
 *Tracking the progression and convergence of fitness scores across generations.*
 
 ---
@@ -58,13 +58,13 @@ Simulating thousands of 2D physics drops is computationally expensive. S34 is bu
 ### Exploring the Fitness Landscape
 Outputs are serialized to `.jsonl` and fed into a separate Python/Dash data pipeline (`cartographer.py`) for deep Principal Component Analysis (PCA) to map the evolutionary pathways.
 
-![PC1 Population Evolution Over Time](assets/pc1_population_evolution_over_time.png)
+![PC1 Population Evolution Over Time](../assets/pc1_population_evolution_over_time.png)
 *Tracking how the population clusters around specific Principal Component values as generations advance.*
 
-![3D Fitness Landscape: PC1 vs PC2 vs Fitness](assets/pc1vspc2vfitness.png)
+![3D Fitness Landscape: PC1 vs PC2 vs Fitness](../assets/pc1vspc2vfitness.png)
 *A 3D projection of the fitness landscape, mapping the physical geometries against their evolutionary success.*
 
 ### Principal Component Definitions
 To interpret the mathematical vectors discovered by the Cartographer, the following definitions map the Principal Components back to the physical traits of the sorting machines:
 
-![PCA Definitions](assets/pca_definitions.png)
+![PCA Definitions](../assets/pca_definitions.png)

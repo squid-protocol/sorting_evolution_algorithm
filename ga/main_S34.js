@@ -373,6 +373,31 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'autosave':
                 downloadJSON(payload.chromosome, `plinko_best_S34_G${payload.generation}_Run${payload.runCount}.json`);
                 break;
+            case 'emergency_halt':
+                updateUIStatus("🚨 EMERGENCY HALT 🚨");
+                
+                const rawJSON = JSON.stringify(payload.suspectChromosome, null, 2);
+
+                // 1. Print RAW text to console so it can be highlighted and copied
+                console.error("\n==================================================");
+                console.error("🚨 EVOLUTION EMERGENCY HALT TRIGGERED 🚨");
+                console.error("Message: " + payload.message);
+                console.error("Reason: " + payload.reason);
+                console.error("Generation: " + payload.generation);
+                console.error("\n--- COPY THE JSON BELOW THIS LINE ---\n");
+                console.error(rawJSON);
+                console.error("\n--- COPY THE JSON ABOVE THIS LINE ---\n");
+                console.error("==================================================\n");
+                
+                // 2. Alert the user
+                alert(`🚨 SYSTEM HALTED 🚨\n\nCircuit Breaker Tripped. Scroll to the bottom of the console (F12) to copy the raw JSON of the broken chromosome.`);
+                
+                // 3. Reset buttons
+                document.getElementById('startGAButton').disabled = false;
+                document.getElementById('startGAButton').textContent = "Start Evolution";
+                document.getElementById('stopGAButton').disabled = true;
+                break;
+                
             case 'error':
                 console.error("[Main] Received error from worker:", payload);
                 updateUIStatus(`Worker Error! Check Console.`);

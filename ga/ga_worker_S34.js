@@ -26,6 +26,10 @@ self.onmessage = function(e) {
 
     if (command === 'init') {
         masterConfig = payload.config;
+        // --- CONFIG BULLETPROOFING: Ensure BOARD_WIDTH exists so math doesn't result in NaN ---
+        if (!masterConfig.SIM_CONFIG) masterConfig.SIM_CONFIG = {};
+        if (!masterConfig.SIM_CONFIG.BOARD_WIDTH) masterConfig.SIM_CONFIG.BOARD_WIDTH = 1000;
+        // -------------------------------------------------------------------------------------
         runId = payload.runId;
         if (!evolutionEngine) {
             evolutionEngine = new EvolutionEngine();
@@ -98,9 +102,14 @@ const DETECTOR_OFFSET_CONFIG = { MIN: -400, MAX: 400 };
 const ANGLE_CONSTRAINT = { MAX_HORIZONTAL_RADIANS: 1.4, MIN_HORIZONTAL_RADIANS: -1.4 };
 // Change the MIN and MAX in the COMPLEX_RAMP object
 const LATENT_GENE_CONFIG = {
-    NUM_PEG_MATRICES: 9, NUM_COMPLEX_RAMPS: 9,
-    MIN_ACTIVE_OBSTACLES: 5,
-    COMPLEX_RAMP: { PEG_MAX_RADIUS: 50, INITIAL_LENGTH: { MIN: 15, MAX: 45 } } // <-- Adjusted to be smaller
+    // 1. Increase total genetic capacity so the GA has more latent genes to play with
+    NUM_PEG_MATRICES: 15, 
+    NUM_COMPLEX_RAMPS: 15, 
+    
+    // 2. Force the algorithm to turn on 8 of these obstacles right at Generation 1
+    MIN_ACTIVE_OBSTACLES: 8, 
+    
+    COMPLEX_RAMP: { PEG_MAX_RADIUS: 20, INITIAL_LENGTH: { MIN: 45, MAX: 400 } }
 };
 const BATCH_SIZE_CONFIG = { MIN: 150, MAX: 500 };
 const NUM_BATCHES_CONFIG = { MIN: 2, MAX: 5 };
@@ -117,8 +126,8 @@ const SHAKE_CONFIG = {
     BIASED_TIME_OFF_RANGE: { MIN: 1, MAX: 5 }
 };
 const PEG_MATRIX_CONFIG = {
-    MAX_GRID_DIM: 10, SPACING: { MIN: 5, MAX: 100 },
-    STAGGER: { MIN: -50, MAX: 50 }, ROTATION: { MIN: -Math.PI / 4, MAX: Math.PI / 4 },
+    MAX_GRID_DIM: 4, SPACING: { MIN: 15, MAX: 40 }, // Stop making 1000px wide walls
+    STAGGER: { MIN: -20, MAX: 20 }, ROTATION: { MIN: -Math.PI / 4, MAX: Math.PI / 4 },
 };
 
 // --- Helper Functions ---
@@ -156,6 +165,11 @@ class EvolutionEngine {
         this.allTimeBest = { chromosome: null, result: null, fitness: -Infinity };
         this.currentDirectives = null;
         this.fitnessWeights = null;
+        
+        // --- CIRCUIT BREAKER STATE ---
+        this.consecutiveFailures = 0;
+        this.MAX_CONSECUTIVE_FAILURES = 25; 
+        this.lastFailureReason = "";
     }
 
     initWorkers() {
@@ -269,15 +283,23 @@ class EvolutionEngine {
 
     createInitialPopulation(seed = null) {
         this.population = [];
+        let cleanBaseSeed = null;
+
         if (seed) {
-            const eliteSeed = JSON.parse(JSON.stringify(seed));
+            // 1. Create a master cleaned version of the seed ONCE
+            cleanBaseSeed = JSON.parse(JSON.stringify(seed));
+            this.sanitizeChromosome(cleanBaseSeed);
+
+            // 2. Push the exact clean seed as our first elite
+            const eliteSeed = JSON.parse(JSON.stringify(cleanBaseSeed));
             eliteSeed.id = getUniqueId();
             this.population.push(eliteSeed);
 
+            // 3. Clone the CLEAN seed for all mutations, NOT the raw broken seed
             const permutatedCount = Math.floor(POPULATION_SIZE / 2) -1;
             for (let i = 0; i < permutatedCount; i++) {
                 const child = this.createAndValidateChromosome(() => {
-                    const c = JSON.parse(JSON.stringify(seed));
+                    const c = JSON.parse(JSON.stringify(cleanBaseSeed)); // <-- THE VITAL FIX
                     this.mutate(c);
                     c.id = getUniqueId();
                     delete c.fitness;
@@ -335,13 +357,11 @@ class EvolutionEngine {
         const genEndTime = performance.now();
         const bestOfGen = this.population[0];
         if (bestOfGen && bestOfGen.fitness > this.allTimeBest.fitness) {
-            // A better design was found, so reset the stagnation counter
             this.allTimeBest = { fitness: bestOfGen.fitness, result: bestOfGen.fullResult, chromosome: JSON.parse(JSON.stringify(bestOfGen)) };
             delete this.allTimeBest.chromosome.fullResult;
             this.bestDesignsHistory.push(JSON.parse(JSON.stringify(this.allTimeBest.chromosome)));
             this.stagnationCounter = 0;
         } else {
-            // No improvement, so increment the stagnation counter
             this.stagnationCounter++;
         }
 
@@ -349,22 +369,47 @@ class EvolutionEngine {
         this.adaptHyperparameters();
         this.generateMetareport(genEndTime - genStartTime);
 
-        self.postMessage({
+        // UI VISIBILITY FIX: Always show the best of the CURRENT generation, even if it sucks.
+        const currentGenBest = JSON.parse(JSON.stringify(bestOfGen));
+        delete currentGenBest.fullResult; // Clean up payload
+        
+        postMessage({
             type: 'update',
             payload: {
                 generation: this.generation, runCount: this.runCount,
-                bestIndividual: this.allTimeBest.chromosome, bestResult: this.allTimeBest.result,
+                bestIndividual: currentGenBest, bestResult: bestOfGen.fullResult,
                 mutationRate: this.currentMutationRate, history: this.bestDesignsHistory
             }
         });
 
         if ((this.generation + 1) % AUTOSAVE_INTERVAL === 0) {
-            self.postMessage({ type: 'autosave', payload: { chromosome: this.allTimeBest.chromosome, generation: this.generation + 1, runCount: this.runCount } });
+            postMessage({ type: 'autosave', payload: { chromosome: this.allTimeBest.chromosome, generation: this.generation + 1, runCount: this.runCount } });
         }
 
         this.createNewGeneration();
         this.generation++;
         if (this.isRunning) setTimeout(() => this.runGeneration(), 0);
+    }
+
+    triggerEmergencyHalt(suspectId) {
+        this.isRunning = false;
+        this.isPaused = false;
+        if (this.jobQueue) {
+            this.jobQueue.reject('EMERGENCY_HALT');
+            this.jobQueue = null;
+        }
+        
+        const badChromosome = this.population.find(p => p.id === suspectId) || this.population[0];
+        
+        self.postMessage({
+            type: 'emergency_halt',
+            payload: {
+                message: `Circuit Breaker Tripped! ${this.consecutiveFailures} consecutive physics failures.`,
+                reason: this.lastFailureReason,
+                generation: this.generation,
+                suspectChromosome: badChromosome
+            }
+        });
     }
 
     stopEvolution() {
@@ -405,6 +450,22 @@ class EvolutionEngine {
         if (!this.jobQueue || !this.jobQueue.resolve) return;
         const { result, id } = e.data.payload;
         const individual = this.population.find(p => p.id === id);
+        
+        // --- CIRCUIT BREAKER LOGIC ---
+        if (result && (result.exitReason === "CRASH" || result.exitReason === "PhysicsViolation")) {
+            this.consecutiveFailures++;
+            this.lastFailureReason = result.error || result.exitReason;
+        } else {
+            // If we get a good result, cool off the breaker slowly
+            this.consecutiveFailures = Math.max(0, this.consecutiveFailures - 1);
+        }
+
+        if (this.consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES) {
+            this.triggerEmergencyHalt(id);
+            return; // Abort processing this queue immediately
+        }
+        // -----------------------------
+
         if (result && individual) {
             individual.fullResult = result;
         }
@@ -458,6 +519,25 @@ class EvolutionEngine {
         }
     }
 
+    // --- ADDED MISSING METHODS HERE ---
+    adaptHyperparameters() {
+        if (this.stagnationCounter >= 5) {
+            this.currentMutationRate = Math.min(0.50, this.currentMutationRate * 1.1);
+        } else if (this.stagnationCounter === 0) {
+            this.currentMutationRate = 0.05; 
+        }
+    }
+
+    generateMetareport(durationMs) {
+        this.metaHistory.push({
+            generation: this.generation,
+            bestFitness: this.allTimeBest.fitness,
+            mutationRate: this.currentMutationRate,
+            stagnation: this.stagnationCounter,
+            duration_ms: durationMs
+        });
+    }
+    // ----------------------------------
 
     createNewGeneration() {
         const newPopulation = [];
@@ -509,16 +589,47 @@ class EvolutionEngine {
     }
 
     createAndValidateChromosome(creationFn) {
-        let attempts = 0;
-        while (attempts < 50) {
-            const chromo = creationFn();
-            if (this.validateFunnelProfile(chromo)) {
-                return chromo;
-            }
-            attempts++;
+        const c = creationFn();
+        this.sanitizeChromosome(c);
+        return c;
+    }
+
+    sanitizeChromosome(chromosome) {
+        if (!chromosome) return;
+
+        // 1. Sanitize Drop Zone & Timing
+        if (chromosome.conveyorDropX == null || isNaN(chromosome.conveyorDropX)) {
+            chromosome.conveyorDropX = 500; // Hard fallback to 500 center
         }
-        console.warn("[GA-Worker] Failed to generate a valid chromosome after 50 attempts. Using last attempt.");
-        return creationFn();
+        if (chromosome.conveyorDropWidth == null || isNaN(chromosome.conveyorDropWidth)) {
+            chromosome.conveyorDropWidth = 400; 
+        }
+        if (chromosome.freeFallTime == null || isNaN(chromosome.freeFallTime)) {
+            chromosome.freeFallTime = 100;
+        }
+        
+        // 2. Sanitize Funnel Profile
+        if (chromosome.funnel_profile) {
+            chromosome.funnel_profile.forEach(slice => {
+                if (slice.offset == null || isNaN(slice.offset)) slice.offset = 0;
+                if (slice.width == null || isNaN(slice.width)) slice.width = 400;
+            });
+        }
+        if (chromosome.detectorOffset == null || isNaN(chromosome.detectorOffset)) {
+            chromosome.detectorOffset = 0;
+        }
+
+        // 3. Sanitize Obstacles
+        if (chromosome.complexRamps) {
+            chromosome.complexRamps.forEach(ramp => {
+                if (ramp.x == null || isNaN(ramp.x)) ramp.x = 500; // Hard fallback
+            });
+        }
+        if (chromosome.pegMatrices) {
+            chromosome.pegMatrices.forEach(matrix => {
+                if (matrix.x == null || isNaN(matrix.x)) matrix.x = 500; // Hard fallback
+            });
+        }
     }
 
     validateFunnelProfile(chromosome) {
@@ -561,6 +672,14 @@ class EvolutionEngine {
         const { funnel_profile, machineHeight, detectorOffset } = chromosome;
         if (!funnel_profile || funnel_profile.length < 2) return;
 
+        // --- DEEP GENOME HEALER: Fix missing legacy S33 properties (including nulls) ---
+        funnel_profile.forEach(slice => {
+            if (slice.offset == null || isNaN(slice.offset)) slice.offset = 0;
+            if (slice.width == null || isNaN(slice.width)) slice.width = 400;
+        });
+        if (chromosome.detectorOffset == null || isNaN(chromosome.detectorOffset)) chromosome.detectorOffset = 0;
+        // -------------------------------------------------------------
+
         // 1. Separate the evolvable slices from the final sensor slice
         const evolvableSlices = funnel_profile.slice(0, -1);
         const sensorSlice = funnel_profile[funnel_profile.length - 1];
@@ -587,6 +706,13 @@ class EvolutionEngine {
 
         // 4. Sort ONLY the evolvable slices by Y-position
         evolvableSlices.sort((a, b) => a.y_position - b.y_position);
+
+        // FIX: Force a minimum 1px gap so slices never perfectly overlap and trigger validation failures
+        for (let i = 0; i < evolvableSlices.length - 1; i++) {
+            if (evolvableSlices[i+1].y_position <= evolvableSlices[i].y_position) {
+                evolvableSlices[i+1].y_position = evolvableSlices[i].y_position + 1;
+            }
+        }
 
         // 5. Reconstruct the profile: Evolvable slices + Anchored Sensor Slice
         sensorSlice.y_position = machineHeight;
@@ -615,13 +741,15 @@ class EvolutionEngine {
         for (let i = 0; i < FUNNEL_PROFILE_CONFIG.NUM_SLICES; i++) {
             const t = i / (FUNNEL_PROFILE_CONFIG.NUM_SLICES - 1);
             const baseWidth = topWidth + t * (bottomWidth - topWidth);
-            const noise = (i > 0 && i < FUNNEL_PROFILE_CONFIG.NUM_SLICES - 1) ? randn_bm(-50, 50) : 0;
+            
+            // FIX 1: Dramatically reduce the noise so the walls are a relatively smooth V-shape to start
+            const noise = (i > 0 && i < FUNNEL_PROFILE_CONFIG.NUM_SLICES - 1) ? randn_bm(-5, 5) : 0;
             let finalWidth = baseWidth + noise;
 
             finalWidth = Math.max(finalWidth, FUNNEL_PROFILE_CONFIG.PINCH_POINT_THRESHOLD);
 
-            const maxOffset = (masterConfig.SIM_CONFIG.BOARD_WIDTH / 2) - (finalWidth / 2);
-            const finalOffset = rand(-maxOffset, maxOffset);
+            // FIX 2: Force the offset to 0 so the funnel is perfectly centered instead of wildly zigzagging
+            const finalOffset = 0;
 
             funnel_profile.push({
                 y_position: 50 + t * (machineHeight - 50),
@@ -686,7 +814,7 @@ class EvolutionEngine {
             funnel_profile,
             machineHeight,
             detectorOffset: rand(getRange('detectorOffset', DETECTOR_OFFSET_CONFIG).min, getRange('detectorOffset', DETECTOR_OFFSET_CONFIG).max),
-            boardAngle: rand(0, Math.PI / 2),
+            boardAngle: rand(0, 1.2),
             complexRamps: createComplexRamps(),
             pegMatrices: createPegMatrices(),
             batchSize: randInt(BATCH_SIZE_CONFIG.MIN, BATCH_SIZE_CONFIG.MAX),
@@ -694,7 +822,8 @@ class EvolutionEngine {
             dropDelayTime: rand(DROP_DELAY_CONFIG.MIN, DROP_DELAY_CONFIG.MAX),
             batchDropDuration: rand(BATCH_DROP_DURATION_CONFIG.MIN, BATCH_DROP_DURATION_CONFIG.MAX),
             freeFallTime: rand(FREE_FALL_TIME_CONFIG.MIN, FREE_FALL_TIME_CONFIG.MAX),
-            conveyorDropX: rand(CONVEYOR_DROP_CONFIG.DROP_X.MIN, CONVEYOR_DROP_CONFIG.DROP_X.MAX),
+            // FIX 3: Force the drop zone to be perfectly centered over our new V-funnel
+            conveyorDropX: masterConfig.SIM_CONFIG.BOARD_WIDTH / 2,
             conveyorDropWidth: rand(CONVEYOR_DROP_CONFIG.DROP_WIDTH.MIN, CONVEYOR_DROP_CONFIG.DROP_WIDTH.MAX),
             shakeAmplitude: shakeAmp,
             shakeTimeOn: shakeOn,
@@ -760,22 +889,21 @@ class EvolutionEngine {
     }
 
     mutate(chromosome, directive = { type: 'random_unconstrained' }) {
-        // --- S34 LATENT GENE SAFEGUARD ---
-        // If the chromosome is missing these arrays, inject them safely.
-        chromosome.complexRamps = chromosome.complexRamps || [];
-        chromosome.pegMatrices = chromosome.pegMatrices || [];
-        chromosome.funnel_profile = chromosome.funnel_profile || [];
-
         const rate = this.currentMutationRate * (directive.mutation_magnitude || 1);
 
         if (Math.random() < rate) chromosome.boardAngle += randn_bm(-0.2, 0.2);
-        chromosome.boardAngle = Math.max(0, Math.min(Math.PI / 2, chromosome.boardAngle));
-        if (Math.random() < rate) chromosome.detectorOffset += randn_bm(-50, 50);
+        chromosome.boardAngle = Math.max(0, Math.min(1.2, chromosome.boardAngle));
+        
+        // --- DETECTOR OFFSET: Let it swing wildly, but clamp it 150px from the edges ---
+        if (Math.random() < rate) chromosome.detectorOffset += randn_bm(-250, 250); 
+        const maxDetectorOffset = (masterConfig.SIM_CONFIG.BOARD_WIDTH / 2) - 150;
+        chromosome.detectorOffset = Math.max(-maxDetectorOffset, Math.min(maxDetectorOffset, chromosome.detectorOffset));
+        
         if (Math.random() < rate) chromosome.machineHeight += randn_bm(-100, 100);
+        chromosome.machineHeight = Math.max(MACHINE_HEIGHT_CONFIG.MIN, Math.min(MACHINE_HEIGHT_CONFIG.MAX, chromosome.machineHeight));
 
         chromosome.funnel_profile.forEach((slice, i) => {
             if (i > 0 && i < chromosome.funnel_profile.length - 1) {
-                // 1. Apply random mutations
                 if (Math.random() < rate) {
                     slice.width += randn_bm(-80, 80);
                 }
@@ -783,11 +911,8 @@ class EvolutionEngine {
                     slice.offset += randn_bm(-80, 80);
                 }
                 
-                // 2. HEALING LOGIC: Always enforce the pinch point threshold 
-                // outside the mutation block to fix crossover contamination!
                 slice.width = Math.max(slice.width, FUNNEL_PROFILE_CONFIG.PINCH_POINT_THRESHOLD);
                 
-                // 3. Keep it within the board boundaries
                 const maxOffset = (masterConfig.SIM_CONFIG.BOARD_WIDTH / 2) - (slice.width / 2);
                 slice.offset = Math.max(-maxOffset, Math.min(slice.offset, maxOffset));
             }
@@ -810,8 +935,8 @@ class EvolutionEngine {
             if (Math.random() < rate) ramp.peg2.angle += randn_bm(-Math.PI / 4, Math.PI / 4);
 
             ramp.length = Math.max(10, ramp.length);
-            ramp.peg1.radius = Math.max(0, ramp.peg1.radius);
-            ramp.peg2.radius = Math.max(0, ramp.peg2.radius);
+            ramp.peg1.radius = Math.max(1, ramp.peg1.radius);
+            ramp.peg2.radius = Math.max(1, ramp.peg2.radius);
         });
 
         chromosome.pegMatrices.forEach(matrix => {
@@ -826,11 +951,11 @@ class EvolutionEngine {
             if (Math.random() < rate) matrix.rotation += randn_bm(-Math.PI / 8, Math.PI / 8);
             if (Math.random() < rate) matrix.staggerOffset += randn_bm(-5, 5);
 
-            matrix.gridX = Math.max(1, Math.round(matrix.gridX));
-            matrix.gridY = Math.max(1, Math.round(matrix.gridY));
-            matrix.startSpacingX = Math.max(5, matrix.startSpacingX);
-            matrix.endSpacingX = Math.max(5, matrix.endSpacingX);
-            matrix.spacingY = Math.max(5, matrix.spacingY);
+            matrix.gridX = Math.max(2, Math.round(matrix.gridX));
+            matrix.gridY = Math.max(2, Math.round(matrix.gridY));
+            matrix.startSpacingX = Math.max(10, matrix.startSpacingX);
+            matrix.endSpacingX = Math.max(10, matrix.endSpacingX);
+            matrix.spacingY = Math.max(10, matrix.spacingY);
         });
 
         if (Math.random() < rate) chromosome.batchSize += randn_bm(-50, 50);
@@ -838,7 +963,11 @@ class EvolutionEngine {
         if (Math.random() < rate) chromosome.dropDelayTime += randn_bm(-250, 250);
         if (Math.random() < rate) chromosome.batchDropDuration += randn_bm(-250, 250);
         if (Math.random() < rate) chromosome.freeFallTime += randn_bm(-20, 20);
-        if (Math.random() < rate) chromosome.conveyorDropX += randn_bm(-50, 50);
+        
+        // --- SPAWNER LOCATION: Allow massive horizontal leaps, but keep it on screen ---
+        if (Math.random() < rate) chromosome.conveyorDropX += randn_bm(-250, 250);
+        chromosome.conveyorDropX = Math.max(150, Math.min(masterConfig.SIM_CONFIG.BOARD_WIDTH - 150, chromosome.conveyorDropX));
+        
         if (Math.random() < rate) chromosome.conveyorDropWidth += randn_bm(-50, 50);
 
         chromosome.batchSize = Math.max(BATCH_SIZE_CONFIG.MIN, Math.min(BATCH_SIZE_CONFIG.MAX, Math.round(chromosome.batchSize)));
@@ -865,12 +994,48 @@ class EvolutionEngine {
         chromosome.shakeTimeOff_harsh = Math.max(0, chromosome.shakeTimeOff_harsh);
 
         const finalSlice = chromosome.funnel_profile[chromosome.funnel_profile.length - 1];
-        if (finalSlice) {
-            finalSlice.width = masterConfig.SENSOR_CONFIG.SENSOR_WIDTH;
-            finalSlice.offset = chromosome.detectorOffset;
-            finalSlice.y_position = chromosome.machineHeight;
-        }
+        // Added fallback to DETECTOR_WIDTH for config safety
+        finalSlice.width = masterConfig.SENSOR_CONFIG.SENSOR_WIDTH || masterConfig.SENSOR_CONFIG.DETECTOR_WIDTH || 300;
+        finalSlice.offset = chromosome.detectorOffset;
+        finalSlice.y_position = chromosome.machineHeight;
 
         return chromosome;
+    }
+
+    adaptHyperparameters() {
+        if (this.stagnationCounter > 10) {
+            this.currentMutationRate = Math.min(0.20, this.currentMutationRate * 1.5);
+        } else {
+            this.currentMutationRate = Math.max(0.05, this.currentMutationRate * 0.98);
+        }
+    }
+
+    generateMetareport(duration) {
+        const fitnessValues = this.population.map(p => p.fitness).filter(f => isFinite(f));
+        if (fitnessValues.length === 0) return;
+
+        const meanFitness = fitnessValues.reduce((a, b) => a + b, 0) / fitnessValues.length;
+
+        const stdDev = Math.sqrt(fitnessValues.map(x => Math.pow(x - meanFitness, 2)).reduce((a, b) => a + b) / fitnessValues.length);
+
+        const top20 = this.population.slice(0, 20);
+        const top20MeanFitness = top20.reduce((sum, p) => sum + p.fitness, 0) / top20.length;
+        const exitReasons = {};
+        this.population.forEach(ind => {
+            const reason = ind.fullResult?.exitReason || 'Unknown';
+            exitReasons[reason] = (exitReasons[reason] || 0) + 1;
+        });
+        const bestResult = this.population[0].fullResult || {};
+        const report = {
+            generation: this.generation, run: this.runCount, duration: duration.toFixed(0),
+            bestFitness: this.population[0].fitness, meanFitness, stdDev, top20MeanFitness,
+            earlyExitCounts: exitReasons, mutationRate: this.currentMutationRate,
+            bestOfGenMetrics: {
+                throughput: bestResult.throughputScore, jamPenalty: bestResult.jamPenalty,
+                simultaneousPenalty: bestResult.simultaneousPenalty, consistencyRewardRatio: bestResult.consistencyRewardRatio,
+                symmetryRewardRatio: bestResult.symmetryRewardRatio || 0
+            }
+        };
+        this.metaHistory.push(report);
     }
 }

@@ -61,6 +61,14 @@ class Visualizer {
         if (result && result.functionalAnnotations) {
             this.drawFunctionalAnnotations(chromosome, result.functionalAnnotations);
         }
+
+        // --- CAMERA ALIGNMENT FIX ---
+        // Dynamically focus the camera on the actual machine height, plus a top and bottom margin 
+        // so the spawner and detector are never cut off by the screen edges.
+        this.Matter.Render.lookAt(this.render, {
+            min: { x: 0, y: -150 },
+            max: { x: this.config.SIM_CONFIG.BOARD_WIDTH, y: chromosome.machineHeight + 250 }
+        });
     }
 
     drawSensors(chromosome) {

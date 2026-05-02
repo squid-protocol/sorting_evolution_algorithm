@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>S34 Standalone Simulator</title>
+    <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
@@ -23,29 +24,22 @@
         .setting-item input { flex-basis: 40%; background: #2c3e50; border: 1px solid #7f8c8d; color: white; padding: 5px; border-radius: 4px; }
         .charts-wrapper { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
         .chart-container { position: relative; height: 220px; width: 100%; }
-        .fitness-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 15px;}
-        .fitness-table th, .fitness-table td { padding: 6px; text-align: left; border-bottom: 1px solid #444; }
-        .fitness-table th { color: #bdc3c7; font-weight: 600; }
-        .fitness-table td { color: #ecf0f1; }
-        .fitness-table td:nth-child(2), .fitness-table td:nth-child(3), .fitness-table td:nth-child(4) { text-align: right; font-family: monospace; }
-        .impact-positive { color: #2ecc71 !important; font-weight: bold; }
-        .impact-negative { color: #e74c3c !important; font-weight: bold; }
     </style>
 </head>
 <body>
     <div id="simulation-container"></div>
     <div class="main-container">
         <div class="controls">
-            <h2>S34 Chromosome Loader</h2>
-            <p>Load a single chromosome by pasting JSON below, or load a full history file to browse designs.</p>
+            <h2>S34 Visual Simulator</h2>
+            <p>Paste a chromosome JSON below to watch it run.</p>
             <textarea id="chromosome-input" placeholder="Paste S34 chromosome JSON here..."></textarea>
             <div id="history-controls" style="display: none;">
-                <label for="design-selector">Select Design (by Generation):</label>
+                <label for="design-selector">Select Design:</label>
                 <select id="design-selector"></select>
             </div>
             <div class="button-group">
-                <button id="load-paste-button">Load from Paste</button>
-                <button id="load-file-button">Load History File</button>
+                <button id="load-paste-button">Load Design</button>
+                <button id="load-file-button">Load File</button>
                 <input type="file" id="file-input" accept=".json" style="display: none;" />
             </div>
         </div>
@@ -58,11 +52,10 @@
         <div class="results">
             <h3>Simulation Controls & Results</h3>
             <div class="button-group">
-                <button id="run-button" disabled>Run Full Simulation</button>
-                <button id="stop-button" disabled>End Simulation & Calculate</button>
+                <button id="run-button" disabled>Run Physics Simulation</button>
+                <button id="stop-button" disabled>Stop</button>
             </div>
             <pre id="results-display">Load a chromosome to begin.</pre>
-            <div id="fitness-breakdown-container"></div>
             <div class="charts-wrapper">
                 <div class="chart-container">
                     <h3>Exit Clump Histogram</h3>
@@ -82,18 +75,26 @@
                 for (const key in configModule) {
                     window[key] = configModule[key];
                 }
+                
+                // --- CONFIG BULLETPROOFING ---
+                if (!window.SIM_CONFIG) window.SIM_CONFIG = {};
+                if (!window.SIM_CONFIG.BOARD_WIDTH) window.SIM_CONFIG.BOARD_WIDTH = 2400;
+                
+                // Bind poly-decomp to Matter.js so concave LEGO shapes work
+                Matter.Common.setDecomp(window.decomp);
+                
                 initializeApp();
             })
             .catch(error => {
                 console.error("CRITICAL ERROR: Failed to load simulation_config.js", error);
-                document.body.innerHTML = `<h1>Failed to load critical configuration file. Check the console for details.</h1>`;
+                document.body.innerHTML = `<h1>Failed to load configuration. Check console.</h1>`;
             });
 
         function initializeApp() {
             class Visualizer {
                 constructor(containerElement) {
                     this.Matter = Matter;
-                    const { Engine, Render, Runner, World, Composite, Bodies } = this.Matter;
+                    const { Engine, Render, Runner, World, Composite } = this.Matter;
 
                     this.engine = Engine.create(window.ENGINE_CONFIG);
                     this.world = this.engine.world;
@@ -110,10 +111,6 @@
                     this.runner = Runner.create();
                     Render.run(this.render);
                     Runner.run(this.runner, this.engine);
-                    Render.lookAt(this.render, { 
-                        min: { x: 0, y: 0 }, 
-                        max: { x: window.SIM_CONFIG.BOARD_WIDTH, y: window.SIM_CONFIG.BOARD_HEIGHT } 
-                    });
                 }
 
                 drawStaticBoard(chromosome) {
@@ -125,16 +122,20 @@
                     Composite.remove(this.world, bodiesToRemove);
 
                     const boardBodies = this.createBoardFromChromosome(chromosome);
-                    World.add(this.world, boardBodies);
+                    
+                    // --- QUARANTINE SHIELD ---
+                    const safeBodies = boardBodies.filter(b => b && b.position && !isNaN(b.position.x) && !isNaN(b.position.y) && !isNaN(b.angle));
+                    World.add(this.world, safeBodies);
 
                     const main_sensor_y = chromosome.machineHeight;
                     const lost_sensor_y = main_sensor_y + 100;
-                    const sensor_padding = window.SENSOR_CONFIG.SENSOR_WIDTH / 2;
+                    const sensor_width = window.SENSOR_CONFIG.SENSOR_WIDTH || window.SENSOR_CONFIG.DETECTOR_WIDTH || 300;
+                    const sensor_padding = sensor_width / 2;
                     const main_sensor_x_center = (window.SIM_CONFIG.BOARD_WIDTH / 2) + chromosome.detectorOffset;
-                    const main_sensor_start = main_sensor_x_center - (window.SENSOR_CONFIG.SENSOR_WIDTH / 2);
-                    const main_sensor_end = main_sensor_x_center + (window.SENSOR_CONFIG.SENSOR_WIDTH / 2);
+                    const main_sensor_start = main_sensor_x_center - (sensor_width / 2);
+                    const main_sensor_end = main_sensor_x_center + (sensor_width / 2);
 
-                    const mainSensor = Bodies.rectangle(main_sensor_x_center, main_sensor_y, window.SENSOR_CONFIG.SENSOR_WIDTH, 10, { label: 'sensor_main', isStatic: true, isSensor: true, render: { fillStyle: 'rgba(144, 238, 144, 0.5)' } });
+                    const mainSensor = Bodies.rectangle(main_sensor_x_center, main_sensor_y, sensor_width, 10, { label: 'sensor_main', isStatic: true, isSensor: true, render: { fillStyle: 'rgba(144, 238, 144, 0.5)' } });
                     const left_lost_width = main_sensor_start - sensor_padding;
                     const left_lost_x = left_lost_width / 2;
                     const leftLostSensor = Bodies.rectangle(left_lost_x, lost_sensor_y, left_lost_width, 10, { label: 'sensor_lost', isStatic: true, isSensor: true, render: { fillStyle: 'rgba(255, 255, 0, 0.3)' } });
@@ -144,24 +145,26 @@
                     const rightLostSensor = Bodies.rectangle(right_lost_x, lost_sensor_y, right_lost_width, 10, { label: 'sensor_lost', isStatic: true, isSensor: true, render: { fillStyle: 'rgba(255, 255, 0, 0.3)' } });
 
                     World.add(this.world, [mainSensor, leftLostSensor, rightLostSensor]);
+
+                    // --- CAMERA ALIGNMENT FIX ---
+                    this.Matter.Render.lookAt(this.render, {
+                        min: { x: 0, y: -150 },
+                        max: { x: window.SIM_CONFIG.BOARD_WIDTH, y: chromosome.machineHeight + 250 }
+                    });
                 }
 
                 createBoardFromChromosome(chromosome) {
                     const allBodies = [];
-                    const wallThickness = window.SIM_CONFIG.INTERNAL_WALL_THICKNESS || 8;
+                    const wallThickness = window.SIM_CONFIG.INTERNAL_WALL_THICKNESS || window.SIM_CONFIG.WALL_THICKNESS || 20;
                     allBodies.push(...this.createWallsFromFunctionalProfile(chromosome, wallThickness));
                     if (chromosome.complexRamps) {
                         chromosome.complexRamps.forEach(rampGene => {
-                            if (rampGene.isActive) {
-                                allBodies.push(...this.createComplexRampWithPegs(rampGene, wallThickness));
-                            }
+                            if (rampGene.isActive) allBodies.push(...this.createComplexRampWithPegs(rampGene, wallThickness));
                         });
                     }
                     if (chromosome.pegMatrices) {
                         chromosome.pegMatrices.forEach(matrix => {
-                            if (matrix.isActive) {
-                                allBodies.push(...this.createPegsFromMatrix(matrix));
-                            }
+                            if (matrix.isActive) allBodies.push(...this.createPegsFromMatrix(matrix));
                         });
                     }
                     return allBodies;
@@ -173,6 +176,8 @@
                     const verticesL = [];
                     const verticesR = [];
                     const topY = 50;
+                    const sensor_width = window.SENSOR_CONFIG.SENSOR_WIDTH || window.SENSOR_CONFIG.DETECTOR_WIDTH || 300;
+
                     funnel_profile.forEach((slice, i) => {
                         const t = i / (funnel_profile.length - 1);
                         const y = topY + t * (machineHeight - topY);
@@ -181,8 +186,9 @@
                         verticesR.push({ x: centerX + slice.width / 2, y });
                     });
                     const sensorCenterX = (window.SIM_CONFIG.BOARD_WIDTH / 2) + detectorOffset;
-                    verticesL[verticesL.length - 1] = { x: sensorCenterX - window.SENSOR_CONFIG.SENSOR_WIDTH / 2, y: machineHeight };
-                    verticesR[verticesR.length - 1] = { x: sensorCenterX + window.SENSOR_CONFIG.SENSOR_WIDTH / 2, y: machineHeight };
+                    verticesL[verticesL.length - 1] = { x: sensorCenterX - sensor_width / 2, y: machineHeight };
+                    verticesR[verticesR.length - 1] = { x: sensorCenterX + sensor_width / 2, y: machineHeight };
+                    
                     const leftWall = this.createConnectedWallFromVertices(verticesL, thickness);
                     const rightWall = this.createConnectedWallFromVertices(verticesR, thickness);
                     return [...leftWall, ...rightWall];
@@ -214,21 +220,23 @@
                     });
                     return newPegs;
                 }
+
                 createComplexRampWithPegs(rampGene, thickness) {
                     const { Bodies, Vector } = this.Matter;
                     const rampBodies = [];
                     const pegRadius = 4;
-                    const ramp = Bodies.rectangle(rampGene.x, rampGene.y, rampGene.length, thickness, { label: 'board_element', isStatic: true, angle: rampGene.rotation });
+                    const ramp = Bodies.rectangle(rampGene.x, rampGene.y, rampGene.length, thickness, { label: 'board_element', isStatic: true, angle: rampGene.rotation, render: { fillStyle: '#95a5a6' } });
                     rampBodies.push(ramp);
                     const center = Vector.create(rampGene.x, rampGene.y), axis = Vector.rotate(Vector.create(1, 0), rampGene.rotation);
                     const halfLength = rampGene.length / 2;
                     const v1 = Vector.add(center, Vector.mult(axis, -halfLength)), v2 = Vector.add(center, Vector.mult(axis, halfLength));
                     const p1Offset = Vector.rotate(Vector.create(rampGene.peg1.radius, 0), rampGene.peg1.angle), p1Pos = Vector.add(v1, p1Offset);
-                    rampBodies.push(Bodies.circle(p1Pos.x, p1Pos.y, pegRadius, { label: 'board_element', isStatic: true, restitution: 0.5 }));
+                    rampBodies.push(Bodies.circle(p1Pos.x, p1Pos.y, pegRadius, { label: 'board_element', isStatic: true, restitution: 0.5, render: { fillStyle: '#bdc3c7' } }));
                     const p2Offset = Vector.rotate(Vector.create(rampGene.peg2.radius, 0), rampGene.peg2.angle), p2Pos = Vector.add(v2, p2Offset);
-                    rampBodies.push(Bodies.circle(p2Pos.x, p2Pos.y, pegRadius, { label: 'board_element', isStatic: true, restitution: 0.5 }));
+                    rampBodies.push(Bodies.circle(p2Pos.x, p2Pos.y, pegRadius, { label: 'board_element', isStatic: true, restitution: 0.5, render: { fillStyle: '#bdc3c7' } }));
                     return rampBodies;
                 }
+
                 createConnectedWallFromVertices(vertices, thickness) {
                     if (!vertices || vertices.length < 2) return [];
                     const { Bodies } = this.Matter;
@@ -287,9 +295,10 @@
                     }));
                     
                     const main_sensor_y = this.chromosome.machineHeight;
+                    const sensor_width = window.SENSOR_CONFIG.SENSOR_WIDTH || window.SENSOR_CONFIG.DETECTOR_WIDTH || 300;
                     const main_sensor_x_center = (window.SIM_CONFIG.BOARD_WIDTH / 2) + this.chromosome.detectorOffset;
-                    const main_sensor_start = main_sensor_x_center - (window.SENSOR_CONFIG.SENSOR_WIDTH / 2);
-                    const main_sensor_end = main_sensor_x_center + (window.SENSOR_CONFIG.SENSOR_WIDTH / 2);
+                    const main_sensor_start = main_sensor_x_center - (sensor_width / 2);
+                    const main_sensor_end = main_sensor_x_center + (sensor_width / 2);
 
                     const gameLoop = () => {
                         if (!this.isRunning) return;
@@ -311,11 +320,26 @@
                                 const newSpawns = Math.min(piecesPerBatch, expectedSpawns) - batch.piecesSpawned;
 
                                 if (newSpawns > 0) {
+                                    // --- COLORFUL LEGO PALETTE ---
+                                    const legoColors = ['#e74c3c', '#3498db', '#f1c40f', '#2ecc71', '#9b59b6', '#e67e22', '#ecf0f1'];
+
                                     for (let i = 0; i < newSpawns; i++) {
                                         const shapeDef = this.pieceLibrary[Math.floor(Math.random() * this.pieceLibrary.length)];
-                                        const spawnX = this.chromosome.conveyorDropX + (Math.random() - 0.5) * this.chromosome.conveyorDropWidth;
-                                        const piece = Bodies.fromVertices(spawnX, 10, [shapeDef.vertices], { ...window.PIECE_PHYSICS_PROPERTIES, label: 'lego', render: { fillStyle: '#f1c40f' } });
-                                        Body.setVelocity(piece, { x: 0, y: this.engine.world.gravity.y * ((this.chromosome.freeFallTime || 0) / this.timeStep) });
+                                        const randomColor = legoColors[Math.floor(Math.random() * legoColors.length)];
+                                        
+                                        let spawnX = this.chromosome.conveyorDropX + (Math.random() - 0.5) * this.chromosome.conveyorDropWidth;
+                                        let startVY = this.engine.world.gravity.y * ((this.chromosome.freeFallTime || 0) / this.timeStep);
+                                        
+                                        // Bulletproof spawner to prevent crash
+                                        if(isNaN(spawnX)) spawnX = window.SIM_CONFIG.BOARD_WIDTH / 2;
+                                        if(isNaN(startVY)) startVY = 0;
+
+                                        const piece = Bodies.fromVertices(spawnX, 10, [shapeDef.vertices], { 
+                                            ...window.PIECE_PHYSICS_PROPERTIES, 
+                                            label: 'lego', 
+                                            render: { fillStyle: randomColor } 
+                                        });
+                                        Body.setVelocity(piece, { x: 0, y: startVY });
                                         Composite.add(this.engine.world, piece);
                                     }
                                     batch.piecesSpawned += newSpawns;
@@ -337,6 +361,13 @@
                         const piecesInWorld = Composite.allBodies(this.engine.world).filter(b => b.label === 'lego');
 
                         for (const body of piecesInWorld) {
+                            // X-Axis Kill Plane (matches worker)
+                            const isWayOffScreenX = body.position.x < -1000 || body.position.x > window.SIM_CONFIG.BOARD_WIDTH + 1000;
+
+                            if (body.position.y > main_sensor_y + 100 || isWayOffScreenX) {
+                                piecesToRemove.push(body);
+                                continue;
+                            }
                             if (body.position.y > main_sensor_y && body.position.x >= main_sensor_start && body.position.x <= main_sensor_end) {
                                 if (!this.exitedPieceIDs.has(body.id)) {
                                     this.exitedPieceIDs.add(body.id);
@@ -390,6 +421,29 @@
                 }
             }
 
+            // --- STANDALONE GENOME HEALER ---
+            function sanitizeChromosome(chromosome) {
+                if (!chromosome) return chromosome;
+                if (chromosome.conveyorDropX == null || isNaN(chromosome.conveyorDropX)) chromosome.conveyorDropX = window.SIM_CONFIG.BOARD_WIDTH / 2;
+                if (chromosome.conveyorDropWidth == null || isNaN(chromosome.conveyorDropWidth)) chromosome.conveyorDropWidth = 400; 
+                if (chromosome.freeFallTime == null || isNaN(chromosome.freeFallTime)) chromosome.freeFallTime = 100;
+                
+                if (chromosome.funnel_profile) {
+                    chromosome.funnel_profile.forEach(slice => {
+                        if (slice.offset == null || isNaN(slice.offset)) slice.offset = 0;
+                        if (slice.width == null || isNaN(slice.width)) slice.width = 400;
+                    });
+                }
+                if (chromosome.detectorOffset == null || isNaN(chromosome.detectorOffset)) chromosome.detectorOffset = 0;
+                if (chromosome.complexRamps) {
+                    chromosome.complexRamps.forEach(r => { if (r.x == null || isNaN(r.x)) r.x = window.SIM_CONFIG.BOARD_WIDTH / 2; });
+                }
+                if (chromosome.pegMatrices) {
+                    chromosome.pegMatrices.forEach(m => { if (m.x == null || isNaN(m.x)) m.x = window.SIM_CONFIG.BOARD_WIDTH / 2; });
+                }
+                return chromosome;
+            }
+
             const loadPasteButton = document.getElementById('load-paste-button');
             const loadFileButton = document.getElementById('load-file-button');
             const fileInput = document.getElementById('file-input');
@@ -402,7 +456,6 @@
             const designSelector = document.getElementById('design-selector');
             const clumpHistogramCanvas = document.getElementById('clumpHistogram');
             const timingHistogramCanvas = document.getElementById('timingHistogram');
-            const fitnessBreakdownContainer = document.getElementById('fitness-breakdown-container');
 
             let currentChromosome = null;
             let loadedHistory = [];
@@ -415,13 +468,13 @@
                 if (!chromosome || !chromosome.funnel_profile) {
                     throw new Error("Invalid S34 chromosome structure. Missing 'funnel_profile'.");
                 }
-                currentChromosome = chromosome;
+                
+                currentChromosome = sanitizeChromosome(chromosome);
                 chromosomeInput.value = JSON.stringify(currentChromosome, null, 2);
                 visualizer.drawStaticBoard(currentChromosome);
                 populateSettings(currentChromosome);
                 runButton.disabled = false;
                 resultsDisplay.textContent = "Chromosome loaded. Adjust settings or run simulation.";
-                fitnessBreakdownContainer.innerHTML = ''; // Clear old breakdown
             };
 
             loadPasteButton.addEventListener('click', () => {
@@ -465,9 +518,7 @@
 
             designSelector.addEventListener('change', () => {
                 const selectedIndex = parseInt(designSelector.value);
-                if (loadedHistory[selectedIndex]) {
-                    processChromosome(loadedHistory[selectedIndex]);
-                }
+                if (loadedHistory[selectedIndex]) processChromosome(loadedHistory[selectedIndex]);
             });
             
             runButton.addEventListener('click', () => {
@@ -478,7 +529,6 @@
                     resultsDisplay.textContent = results.textReport;
                     updateClumpHistogram(results.clumpHistogram);
                     updateTimingHistogram(results.intervals);
-                    updateFitnessBreakdown(results.fullResults);
                     runButton.disabled = false;
                     stopButton.disabled = true;
                 });
@@ -493,7 +543,6 @@
                 if(liveSim) {
                     liveSim.stop();
                     liveSim.calculateAndShowResults("Stopped by user");
-                    // Reset the world for the next run
                     const { Composite } = Matter;
                     const piecesInWorld = Composite.allBodies(visualizer.engine.world).filter(b => b.label === 'lego');
                     Composite.remove(visualizer.engine.world, piecesInWorld);
@@ -511,10 +560,6 @@
                     <div class="setting-item"><label>Drop Delay (ms)</label><input type="number" id="setting-dropDelayTime" value="${chromosome.dropDelayTime ?? 0}"></div>
                     <div class="setting-item"><label>Batch Drop Duration (ms)</label><input type="number" id="setting-batchDropDuration" value="${chromosome.batchDropDuration ?? 1000}"></div>
                     <div class="setting-item"><label>Free Fall Time (ms)</label><input type="number" id="setting-freeFallTime" value="${chromosome.freeFallTime ?? 200}"></div>
-                    <hr>
-                    <div class="setting-item"><label>Shake Amp</label><input type="number" step="0.01" id="setting-shakeAmplitude" value="${chromosome.shakeAmplitude ?? 0}"></div>
-                    <div class="setting-item"><label>Shake On (ms)</label><input type="number" id="setting-shakeTimeOn" value="${chromosome.shakeTimeOn ?? 0}"></div>
-                    <div class="setting-item"><label>Shake Off (ms)</label><input type="number" id="setting-shakeTimeOff" value="${chromosome.shakeTimeOff ?? 0}"></div>
                 `;
             }
             
@@ -528,9 +573,6 @@
                 modifiedChromosome.dropDelayTime = parseInt(document.getElementById('setting-dropDelayTime').value);
                 modifiedChromosome.batchDropDuration = parseInt(document.getElementById('setting-batchDropDuration').value);
                 modifiedChromosome.freeFallTime = parseInt(document.getElementById('setting-freeFallTime').value);
-                modifiedChromosome.shakeAmplitude = parseFloat(document.getElementById('setting-shakeAmplitude').value);
-                modifiedChromosome.shakeTimeOn = parseInt(document.getElementById('setting-shakeTimeOn').value);
-                modifiedChromosome.shakeTimeOff = parseInt(document.getElementById('setting-shakeTimeOff').value);
                 return modifiedChromosome;
             }
 
@@ -561,14 +603,7 @@
                     timingChart = new Chart(timingHistogramCanvas.getContext('2d'), { type: 'bar', data: { labels, datasets: [{ label: 'Interval Count', data: bins, backgroundColor: 'rgba(46, 204, 113, 0.5)' }] } });
                 }
             }
-
-            function updateFitnessBreakdown(result) {
-                // This function will be added in the final implementation.
-                fitnessBreakdownContainer.innerHTML = `<h3>Fitness Breakdown (Coming Soon)</h3><p>Final Score: ${result.finalScore.toFixed(2)}</p>`;
-            }
             
-            // This is the main entry point for the application logic.
-            // It's wrapped in a DOMContentLoaded listener to ensure the page is fully loaded.
             document.addEventListener('DOMContentLoaded', initializeApp);
         }
     </script>
