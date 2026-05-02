@@ -1,7 +1,7 @@
 # Evolutionary Design of a Small Parts Singulator Sorting Machine
 
-🎥 **[Watch the Raw Evolution Demo (Gen 0 vs 50)](https://youtu.be/g3T9_7ois08)** 
-
+### 🎥 Raw Evolution Demo (Gen 3 vs 50)
+[![Raw Evolution Demo](https://img.youtube.com/vi/g3T9_7ois08/maxresdefault.jpg)](https://youtu.be/g3T9_7ois08)
 
 ## Overview
 This project is a highly specialized Machine Learning and Simulation pipeline designed to procedurally generate, optimize, and validate physical sorting mechanisms for small, asymmetric parts. 
@@ -19,8 +19,8 @@ This creates a highly rugged "fitness landscape" where AI easily gets trapped in
 
 To solve this, my engine is built on a novel **three-pillar architecture** that tightly couples raw evolutionary computation with deep statistical analysis and human intuition.
 
-🎥 **[Watch the Full System Overview & Deep Dive](https://youtu.be/e0uPb7Tg9FI)**
-
+### 🎥 Full System Overview & Deep Dive
+[![Full System Overview](https://img.youtube.com/vi/e0uPb7Tg9FI/maxresdefault.jpg)](https://youtu.be/e0uPb7Tg9FI)
 
 ---
 
