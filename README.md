@@ -1,13 +1,14 @@
-# Evoluationary Design of a Small Parts Singulator Sorting Machine
+# Evolutionary Design of a Small Parts Singulator Sorting Machine
 
-🎥 **[Watch the System Overview & Demo on YouTube](https://youtu.be/e0uPb7Tg9FI)**
+🎥 **[Watch the Raw Evolution Demo (Gen 0 vs 50)](https://youtu.be/g3T9_7ois08)** 
+
 
 ## Overview
-Project S34 is a highly specialized Machine Learning and Simulation pipeline designed to procedurally generate, optimize, and validate physical sorting mechanisms for small, asymmetric parts. 
+This project is a highly specialized Machine Learning and Simulation pipeline designed to procedurally generate, optimize, and validate physical sorting mechanisms for small, asymmetric parts. 
 
 Whether sorting agricultural seeds by size, filtering manufacturing components for defects, or organizing consumer plastics (like Lego bricks), designing passive physical sorters (Plinko-style boards, funnels, and vibrating ramps) is traditionally a slow, manual CAD process. 
 
-Project S34 replaces manual iteration with a custom, human-in-the-loop Genetic Algorithm (GA) powered by a headless 2D physics engine (`matter.js`). It is capable of exploring a near-infinite mechanical solution space, mathematically mapping its own evolutionary strategies, and ruthlessly stress-testing its designs to output highly efficient, manufacturable physical geometries.
+I've replaced manual iteration with a custom, human-in-the-loop Genetic Algorithm (GA) powered by a headless 2D physics engine (`matter.js`). It is capable of exploring a near-infinite mechanical solution space, mathematically mapping its own evolutionary strategies, and ruthlessly stress-testing its designs to output highly efficient, manufacturable physical geometries.
 
 ---
 
@@ -16,11 +17,14 @@ Standard optimization algorithms fail when applied to rigid-body physics engines
 
 This creates a highly rugged "fitness landscape" where AI easily gets trapped in dead-ends (local optima) or over-optimizes for statistical flukes (a single lucky simulation run). 
 
-To solve this, Project S34 is built on a novel **three-pillar architecture** that tightly couples raw evolutionary computation with deep statistical analysis and human intuition.
+To solve this, my engine is built on a novel **three-pillar architecture** that tightly couples raw evolutionary computation with deep statistical analysis and human intuition.
+
+🎥 **[Watch the Full System Overview & Deep Dive](https://youtu.be/e0uPb7Tg9FI)**
+
 
 ---
 
-## 🏛️ The S34 Architecture (The Triad)
+## 🏛️ The Architecture (The Triad)
 
 This repository is divided into three distinct but deeply interconnected subsystems:
 
@@ -44,7 +48,7 @@ Because chaotic physics engines occasionally produce "golden runs" (where a bad 
 
 ## 🚀 Getting Started
 
-To run the full S34 pipeline, you will utilize the three subsystems in sequence:
+To run the full pipeline, you will utilize the three subsystems in sequence:
 
 1. **Evolve:** Launch the GA (`/ga/index_S34.html`) to begin searching the solution space.
 2. **Map:** Feed the resulting `.jsonl` logs into the Cartographer (`python ca/cartographer.py data.jsonl`) to visualize the AI's strategies and identify optimal parameters.
